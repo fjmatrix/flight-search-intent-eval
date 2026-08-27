@@ -1,0 +1,4 @@
+{"id":"rt-duration-01","lang":"en","text":"round trip from Chicago to Tokyo next month for a week, 2 adults","expect":{"action":"get_tickets","search_type":"roundtrip","must_be_null":["cabins","max_stops","max_price","flight_duration","connecting_airports","bags"]}}
+{"id":"ow-basic-01","lang":"en","text":"one way SFO to JFK on December 3rd","expect":{"action":"get_tickets","search_type":"oneway","must_be_null":["passengers","cabins","max_stops","max_price","flight_duration","connecting_airports","bags"]}}
+{"id":"multi-01","lang":"en","text":"fly me from Boston to Paris on March 2, then Paris to Rome on March 9, then Rome back to Boston on March 15","expect":{"action":"get_tickets","search_type":"multi","must_be_null":["passengers","cabins","max_stops","max_price","flight_duration","connecting_airports","bags"]}}
+{"id":"invalid-offtopic-01","lang":"en","text":"what is the capital of Australia and who won the world cup","expect":{"action":"handle_invalid"}}
