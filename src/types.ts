@@ -34,31 +34,50 @@ export type ParsedResult =
   | { action: 'handle_invalid'; reason: string }
 
 /**
- * Top-level `params` fields a case may assert are null. Trip-level fields
- * (departure_date, return_date, duration) are deliberately absent: they live
- * inside `trips[]` and get their own graders in M2.
+ * How a case asserts one side of a leg. Either a set of accepted IATA codes, or
+ * `fuzzy` plus the regions the model's names get compared against.
  */
-export const NULLABLE_PARAM_FIELDS = [
-  'passengers',
-  'cabins',
-  'max_stops',
-  'max_price',
-  'flight_duration',
-  'connecting_airports',
-  'bags',
-] as const
-
-export type NullableParamField = (typeof NULLABLE_PARAM_FIELDS)[number]
+export interface LocationExpect {
+  /** Accepted IATA codes. Any one of them is correct. */
+  any_code?: string[]
+  /** The intended location has no IATA code — "Texas", "west Europe". Absent means false. */
+  fuzzy?: boolean
+  /**
+   * One region per location the side is expected to hold, in any order. Read
+   * only when `fuzzy` is true.
+   */
+  names?: string[]
+}
 
 /**
- * A case's expectations. Every field is optional; absent means "don't care",
- * and the matching grader returns null rather than a pass.
- * M2 adds origin, destination, date_range, duration, passengers, cabins, filters.
+ * Mirrors `trips[]` positionally. Omitted nullable fields must be null in the
+ * model response; departure and arrival are required for every expected trip.
+ */
+export interface TripExpect {
+  departure: LocationExpect
+  arrival: LocationExpect
+  /** 'MM/DD/YY' or 'MM/DD/YY-MM/DD/YY'. The model's date must land inside it. */
+  departure_date?: string
+  return_date?: string
+  duration?: string
+}
+
+/**
+ * A case's expectations. For an expected search, omitted nullable params mean
+ * "must be null". Dimension graders still return null when their field is not
+ * asserted; gradeNoInventedParams enforces the omission.
  */
 export interface Expect {
   action?: Action
   search_type?: SearchType
-  must_be_null?: NullableParamField[]
+  trips?: TripExpect[]
+  passengers?: AiSearchInput['passengers']
+  cabins?: AiSearchInput['cabins']
+  max_stops?: AiSearchInput['max_stops']
+  max_price?: AiSearchInput['max_price']
+  flight_duration?: AiSearchInput['flight_duration']
+  connecting_airports?: AiSearchInput['connecting_airports']
+  bags?: AiSearchInput['bags']
 }
 
 export interface Case {
@@ -66,4 +85,6 @@ export interface Case {
   lang: string
   text: string
   expect: Expect
+  /** Report buckets this case counts toward. */
+  tags?: string[]
 }

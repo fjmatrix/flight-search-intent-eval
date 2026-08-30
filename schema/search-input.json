@@ -1,303 +1,265 @@
 {
-  "type": "object",
-  "properties": {
-    "result": {
-      "anyOf": [
-        {
-          "type": "object",
-          "description": "Handles invalid input",
-          "properties": {
-            "action": {
-              "type": "string",
-              "enum": [
-                "handle_invalid"
-              ]
-            },
-            "reason": {
-              "type": "string",
-              "enum": [
-                "off_topic",
-                "invalid_other"
-              ]
-            }
-          },
-          "required": [
-            "action",
-            "reason"
-          ],
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "properties": {
-            "action": {
-              "type": "string",
-              "enum": [
-                "get_tickets"
-              ]
-            },
-            "params": {
-              "type": "object",
-              "properties": {
-                "search_type": {
-                  "type": "string",
-                  "enum": [
-                    "oneway",
-                    "roundtrip",
-                    "multi"
-                  ]
-                },
-                "passengers": {
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "adults": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9
+    "type": "object",
+    "properties": {
+        "result": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "description": "Handles invalid input",
+                    "properties": {
+                        "action": {
+                            "type": "string",
+                            "enum": ["handle_invalid"]
                         },
-                        "children": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9
-                        },
-                        "infants": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9
+                        "reason": {
+                            "type": "string",
+                            "enum": ["off_topic", "invalid_other"]
                         }
-                      },
-                      "required": [
-                        "adults",
-                        "children",
-                        "infants"
-                      ],
-                      "additionalProperties": false
                     },
-                    {
-                      "type": "null"
-                    }
-                  ]
+                    "required": ["action", "reason"],
+                    "additionalProperties": false
                 },
-                "cabins": {
-                  "enum": [
-                    "economy",
-                    "economyPremium",
-                    "business",
-                    "firstClass",
-                    null
-                  ]
-                },
-                "max_stops": {
-                  "anyOf": [
-                    {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 2
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "max_price": {
-                  "anyOf": [
-                    {
-                      "type": "number",
-                      "minimum": 100,
-                      "maximum": 8000
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "flight_duration": {
-                  "description": "Maximum flight duration in hours.",
-                  "anyOf": [
-                    {
-                      "type": "integer",
-                      "minimum": 1,
-                      "maximum": 100
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "connecting_airports": {
-                  "description": "Required connection-airport IATA codes.",
-                  "anyOf": [
-                    {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "bags": {
-                  "description": "Total adult bags.",
-                  "anyOf": [
-                    {
-                      "type": "object",
-                      "properties": {
-                        "checked": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 18
-                        },
-                        "carry_on": {
-                          "type": "integer",
-                          "minimum": 0,
-                          "maximum": 9
-                        }
-                      },
-                      "required": [
-                        "checked",
-                        "carry_on"
-                      ],
-                      "additionalProperties": false
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "trips": {
-                  "type": "array",
-                  "description": "Each item is a trip; approximate dates require a range.",
-                  "minItems": 1,
-                  "maxItems": 8,
-                  "items": {
+                {
                     "type": "object",
                     "properties": {
-                      "departure": {
-                        "type": "array",
-                        "description": "One or more departure locations.",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 100,
-                              "description": "Location name. Preserve custom or vague names; use \"n/a\" when unavailable."
-                            },
-                            "code": {
-                              "type": "string",
-                              "description": "Three-letter IATA code or use \"n/a\" when unavailable."
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "code"
-                          ],
-                          "additionalProperties": false
+                        "action": {
+                            "type": "string",
+                            "enum": ["get_tickets"]
                         },
-                        "minItems": 1,
-                        "maxItems": 20
-                      },
-                      "arrival": {
-                        "type": "array",
-                        "description": "One or more arrival locations.",
-                        "items": {
-                          "type": "object",
-                          "properties": {
-                            "name": {
-                              "type": "string",
-                              "minLength": 1,
-                              "maxLength": 100,
-                              "description": "Location name. Preserve custom or vague names; use \"n/a\" when unavailable."
+                        "params": {
+                            "type": "object",
+                            "properties": {
+                                "search_type": {
+                                    "type": "string",
+                                    "enum": ["oneway", "roundtrip", "multi"]
+                                },
+                                "passengers": {
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "adults": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 9
+                                                },
+                                                "children": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 9
+                                                },
+                                                "infants": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 9
+                                                }
+                                            },
+                                            "required": ["adults", "children", "infants"],
+                                            "additionalProperties": false
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "cabins": {
+                                    "enum": ["economy", "economyPremium", "business", "firstClass", null]
+                                },
+                                "max_stops": {
+                                    "anyOf": [
+                                        {
+                                            "type": "integer",
+                                            "minimum": 0,
+                                            "maximum": 2
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "max_price": {
+                                    "anyOf": [
+                                        {
+                                            "type": "number",
+                                            "minimum": 100,
+                                            "maximum": 10000
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "flight_duration": {
+                                    "description": "Maximum flight duration in hours.",
+                                    "anyOf": [
+                                        {
+                                            "type": "integer",
+                                            "minimum": 1,
+                                            "maximum": 100
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "connecting_airports": {
+                                    "description": "Required connection-airport IATA codes.",
+                                    "anyOf": [
+                                        {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "bags": {
+                                    "description": "Total adult bags.",
+                                    "anyOf": [
+                                        {
+                                            "type": "object",
+                                            "properties": {
+                                                "checked": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 18
+                                                },
+                                                "carry_on": {
+                                                    "type": "integer",
+                                                    "minimum": 0,
+                                                    "maximum": 9
+                                                }
+                                            },
+                                            "required": ["checked", "carry_on"],
+                                            "additionalProperties": false
+                                        },
+                                        {
+                                            "type": "null"
+                                        }
+                                    ]
+                                },
+                                "trips": {
+                                    "type": "array",
+                                    "description": "Each item is a trip; approximate dates require a range.",
+                                    "minItems": 1,
+                                    "maxItems": 8,
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "departure": {
+                                                "type": "array",
+                                                "description": "One or more departure locations.",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "name": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 100,
+                                                            "description": "Location name. Preserve custom or vague names; use \"n/a\" when unavailable."
+                                                        },
+                                                        "code": {
+                                                            "type": "string",
+                                                            "description": "Three-letter IATA code or use \"n/a\" when unavailable."
+                                                        }
+                                                    },
+                                                    "required": ["name", "code"],
+                                                    "additionalProperties": false
+                                                },
+                                                "minItems": 1,
+                                                "maxItems": 10
+                                            },
+                                            "arrival": {
+                                                "type": "array",
+                                                "description": "One or more arrival locations.",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "name": {
+                                                            "type": "string",
+                                                            "minLength": 1,
+                                                            "maxLength": 100,
+                                                            "description": "Location name. Preserve custom or vague names; use \"n/a\" when unavailable."
+                                                        },
+                                                        "code": {
+                                                            "type": "string",
+                                                            "description": "Three-letter IATA code or use \"n/a\" when unavailable."
+                                                        }
+                                                    },
+                                                    "required": ["name", "code"],
+                                                    "additionalProperties": false
+                                                },
+                                                "minItems": 1,
+                                                "maxItems": 20
+                                            },
+                                            "departure_date": {
+                                                "description": "A date or date range in 'MM/DD/YY' or 'MM/DD/YY-MM/DD/YY' format.",
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "return_date": {
+                                                "description": "Round-trip return date. Use null when duration is used.",
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            },
+                                            "duration": {
+                                                "description": "Stay duration in days, such as '7' or '3-5'.",
+                                                "anyOf": [
+                                                    {
+                                                        "type": "string"
+                                                    },
+                                                    {
+                                                        "type": "null"
+                                                    }
+                                                ]
+                                            }
+                                        },
+                                        "required": [
+                                            "departure",
+                                            "arrival",
+                                            "departure_date",
+                                            "return_date",
+                                            "duration"
+                                        ],
+                                        "additionalProperties": false
+                                    }
+                                }
                             },
-                            "code": {
-                              "type": "string",
-                              "description": "Three-letter IATA code or use \"n/a\" when unavailable."
-                            }
-                          },
-                          "required": [
-                            "name",
-                            "code"
-                          ],
-                          "additionalProperties": false
-                        },
-                        "minItems": 1,
-                        "maxItems": 20
-                      },
-                      "departure_date": {
-                        "description": "A date or date range in 'MM/DD/YY' or 'MM/DD/YY-MM/DD/YY' format.",
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "return_date": {
-                        "description": "Round-trip return date. Use null when duration is used.",
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      },
-                      "duration": {
-                        "description": "Stay duration in days, such as '7' or '3-5'.",
-                        "anyOf": [
-                          {
-                            "type": "string"
-                          },
-                          {
-                            "type": "null"
-                          }
-                        ]
-                      }
+                            "required": [
+                                "search_type",
+                                "passengers",
+                                "cabins",
+                                "max_stops",
+                                "max_price",
+                                "flight_duration",
+                                "connecting_airports",
+                                "bags",
+                                "trips"
+                            ],
+                            "additionalProperties": false
+                        }
                     },
-                    "required": [
-                      "departure",
-                      "arrival",
-                      "departure_date",
-                      "return_date",
-                      "duration"
-                    ],
+                    "required": ["action", "params"],
                     "additionalProperties": false
-                  }
                 }
-              },
-              "required": [
-                "search_type",
-                "passengers",
-                "cabins",
-                "max_stops",
-                "max_price",
-                "flight_duration",
-                "connecting_airports",
-                "bags",
-                "trips"
-              ],
-              "additionalProperties": false
-            }
-          },
-          "required": [
-            "action",
-            "params"
-          ],
-          "additionalProperties": false
+            ]
         }
-      ]
-    }
-  },
-  "required": [
-    "result"
-  ],
-  "additionalProperties": false
+    },
+    "required": ["result"],
+    "additionalProperties": false
 }

@@ -1,20 +1,23 @@
 {
-  "prompt": "v6",
-  "repeats": 1,
-  "concurrency": 4,
-  "max_attempts": 3,
-  "providers": {
-    "openai": {
-      "model": "gpt-5.6-terra",
-      "max_tokens": 800,
-      "params": {
-        "temperature": 0,
-        "seed": 10,
-        "reasoning_effort": "none"
-      }
+    "prompt": "v6",
+    "today": "01/01/2026",
+    "repeats": 1,
+    "providers": {
+        "openai": {
+            "model": "gpt-5.6-terra",
+            "max_tokens": 1000,
+            "params": {
+                "reasoning": {
+                    "effort": "low"
+                }
+            }
+        }
+    },
+    "grading": {
+        "embedding_model": "text-embedding-3-small",
+        "similarity_threshold": 0.8
+    },
+    "pricing": {
+        "gpt-5.6-terra": null
     }
-  },
-  "pricing": {
-    "gpt-5.6-terra": null
-  }
 }

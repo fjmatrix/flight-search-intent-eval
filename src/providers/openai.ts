@@ -1,148 +1,75 @@
 import OpenAI from 'openai'
 import {
-  emptyUsage,
-  num,
-  type JsonSchema,
+  NO_USAGE,
   type ModelRequest,
   type ModelResponse,
   type Provider,
   type TokenUsage,
 } from './types.ts'
-import { errorMessage, RetryError, withRetry } from './retry.ts'
+// import { withRetry } from './retry.ts'
+// Parked, not deleted: wrap the responses.create call in withRetry when rate
+// limits start showing up as errors. Until then it is machinery with no job.
 
-/**
- * Chat Completions, not the Responses API: `constructPayload` in flightcat_worker
- * posts to /v1/chat/completions with `response_format`, and an eval that measures a
- * different API surface than production ships is measuring the wrong thing.
- *
- * maxRetries: 0 — retries are handled by withRetry so `attempts` is observable.
- *
- * Constructed lazily: the SDK throws on a missing key at construction, and
- * --check-schema and --dry-run must run without credentials.
- */
+/** Lazy so the SDK's missing-key throw happens at call time, not at import. */
 let client: OpenAI | undefined
+const getClient = () => (client ??= new OpenAI())
 
-function getClient(): OpenAI {
-  client ??= new OpenAI({ maxRetries: 0 })
-  return client
-}
-
-const SCHEMA_NAME = 'flight_search_result'
-
-function readUsage(usage: OpenAI.CompletionUsage | undefined): TokenUsage {
-  if (!usage) return emptyUsage()
-  const promptDetails = usage.prompt_tokens_details
-  const completionDetails = usage.completion_tokens_details
+function readUsage(usage: OpenAI.Responses.ResponseUsage | undefined): TokenUsage {
+  if (!usage) return NO_USAGE
   return {
-    input: num(usage.prompt_tokens),
-    output: num(usage.completion_tokens),
-    reasoning:
-      typeof completionDetails?.reasoning_tokens === 'number'
-        ? completionDetails.reasoning_tokens
-        : null,
-    cache_read: num(promptDetails?.cached_tokens),
-    // Chat Completions has no cache-write counter; OpenAI caching is automatic.
-    cache_write: 0,
-    total: num(usage.total_tokens),
-    raw: usage,
+    input: usage.input_tokens,
+    output: usage.output_tokens,
+    reasoning: usage.output_tokens_details.reasoning_tokens,
+    cached: usage.input_tokens_details.cached_tokens,
+    total: usage.total_tokens,
   }
 }
 
 export const openai: Provider = {
   name: 'openai',
 
-  /**
-   * Identity. `strict: true` narrows what JSON Schema OpenAI accepts (every property
-   * required, additionalProperties: false) but does not rewrite the schema, and
-   * schema/search-input.json already satisfies those constraints — it is the object
-   * production sends. A violation surfaces as a 400 at call time, not a silent edit.
-   */
-  toProviderSchema(schema: JsonSchema) {
-    return schema
-  },
-
   async call(req: ModelRequest): Promise<ModelResponse> {
     const started = Date.now()
-    let attempts = 0
-
     try {
-      const result = await withRetry(req.maxAttempts, () =>
-        getClient().chat.completions.create({
-          model: req.model,
-          max_completion_tokens: req.maxTokens,
-          stream: false,
-          messages: [
-            { role: 'system', content: req.system },
-            { role: 'user', content: req.user },
-          ],
-          response_format: {
+      const response = await getClient().responses.create({
+        model: req.model,
+        instructions: req.system,
+        input: req.user,
+        max_output_tokens: req.maxTokens,
+        text: {
+          format: {
             type: 'json_schema',
-            json_schema: {
-              name: SCHEMA_NAME,
-              strict: true,
-              schema: this.toProviderSchema(req.schema) as Record<string, unknown>,
-            },
+            name: 'flight_search_result',
+            strict: true,
+            schema: req.schema,
           },
-          ...req.params,
-        } as OpenAI.Chat.ChatCompletionCreateParamsNonStreaming),
-      )
-      attempts = result.attempts
-      const completion = result.value
+        },
+        ...req.params,
+      })
 
-      const latency_ms = Date.now() - started
-      const usage = readUsage(completion.usage)
-      const choice = completion.choices[0]
-      const meta = {
-        model_id: completion.model,
-        response_id: completion.id,
-        ...(choice?.finish_reason ? { finish_reason: choice.finish_reason } : {}),
-      }
-      const base = { usage, latency_ms, attempts, meta }
+      const base = { usage: readUsage(response.usage), latency_ms: Date.now() - started }
 
-      if (!choice) {
-        return { ...base, output: null, status: 'parse_error', error: 'no choices' }
-      }
-      if (typeof choice.message.refusal === 'string') {
-        return {
-          ...base,
-          output: null,
-          status: 'refusal',
-          error: choice.message.refusal,
-        }
-      }
-      if (choice.finish_reason === 'length' || choice.finish_reason === 'content_filter') {
-        return {
-          ...base,
-          output: null,
-          status: 'incomplete',
-          error: `finish_reason: ${choice.finish_reason}`,
-        }
+      if (response.status === 'incomplete') {
+        const reason = response.incomplete_details?.reason ?? 'unknown'
+        return { ...base, output: null, status: 'incomplete', error: reason }
       }
 
-      const text = choice.message.content
-      if (typeof text !== 'string') {
-        return { ...base, output: null, status: 'parse_error', error: 'no content' }
+      const refusal = response.output
+        .flatMap((item) => (item.type === 'message' ? item.content : []))
+        .find((part) => part.type === 'refusal')
+      if (refusal) {
+        return { ...base, output: null, status: 'refusal', error: refusal.refusal }
       }
-      try {
-        return { ...base, output: JSON.parse(text), status: 'ok' }
-      } catch (error) {
-        return {
-          ...base,
-          output: null,
-          status: 'parse_error',
-          error: errorMessage(error),
-          raw_text: text.slice(0, 2000),
-        }
-      }
+
+      // strict: true guarantees the text parses and matches the schema.
+      return { ...base, output: JSON.parse(response.output_text), status: 'ok' }
     } catch (error) {
       return {
         output: null,
-        status: 'api_error',
-        error: errorMessage(error),
-        usage: emptyUsage(),
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error),
+        usage: NO_USAGE,
         latency_ms: Date.now() - started,
-        attempts: error instanceof RetryError ? error.attempts : Math.max(attempts, 1),
-        meta: { model_id: req.model },
       }
     }
   },

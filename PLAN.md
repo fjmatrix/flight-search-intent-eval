@@ -48,58 +48,52 @@ interface TokenUsage {
   input: number
   output: number
   reasoning: number | null     // null when the vendor does not report it
-  cache_read: number
-  cache_write: number
+  cached: number
   total: number                // vendor-reported; never summed by hand
-  raw: unknown                 // the vendor's usage object, verbatim
 }
 
-type RunStatus = "ok" | "refusal" | "incomplete" | "parse_error" | "schema_error" | "api_error"
+type RunStatus = "ok" | "refusal" | "incomplete" | "error"
 
 interface ModelResponse {
-  output: unknown | null       // parsed object, or null when status !== "ok"
+  output: unknown              // parsed JSON, or null when status !== "ok"
   status: RunStatus
   error?: string
-  raw_text?: string            // what came back when parsing failed
   usage: TokenUsage
   latency_ms: number
-  attempts: number
-  meta: { model_id: string; response_id?: string; finish_reason?: string }
 }
 
 interface Provider {
-  name: "openai" | "anthropic" | "gemini"
+  name: string
   call(req: ModelRequest): Promise<ModelResponse>
-  toProviderSchema(schema: JsonSchema): unknown   // exported for the parity check
 }
 ```
 
 `run.ts` sees only `Provider`. It never branches on vendor.
 
-A one-line registry — `{ openai, anthropic, gemini }` keyed by name — because config selects a
-vendor by string. The graders stay registry-free; that rule was about grading, not dispatch.
+No registry while there is one adapter — `run.ts` imports it directly. A `{ openai, anthropic,
+gemini }` map earns its place in M4, when config actually has to pick between them.
 
 ### `openai.ts`
 
-- **Request** — **Chat Completions**, not the Responses API. `constructPayload` posts to
-  `/v1/chat/completions` with `response_format`, and an eval that measures a different API
-  surface than production ships is measuring the wrong thing. Prompt as the `system` message,
-  case text as the `user` message.
-- **Schema** — `response_format` = `{ type: "json_schema", json_schema: { name:
-  "flight_search_result", strict: true, schema } }`. `strict` requires
-  `additionalProperties: false` and every property listed in `required`; optional fields are
-  expressed as nullable unions, not by omission. `schema/search-input.json` already satisfies
-  this — it is the object production sends — so `toProviderSchema` is the identity and a
-  violation surfaces as a 400, never as a silent edit.
-- **Parsing** — `choices[0].message.content`, `JSON.parse`. `message.refusal` maps to
-  `status: "refusal"`; `finish_reason` of `length` or `content_filter` maps to
-  `status: "incomplete"`. Neither is a failed grade.
-- **Usage** — `prompt_tokens` → `input`, `completion_tokens` → `output`, `total_tokens`,
-  `prompt_tokens_details.cached_tokens` → `cache_read`,
-  `completion_tokens_details.reasoning_tokens` → `reasoning`. No cache-write counter exists
-  on this surface — OpenAI caching is automatic — so `cache_write` is always 0.
-- **Knobs** — `temperature`, `seed`, `reasoning_effort`, `max_completion_tokens`.
-  `seed` is best-effort, not a guarantee.
+- **Request** — Responses API. Prompt as `instructions`, case text as `input`.
+- **Schema** — `text.format` = `{ type: "json_schema", name: "flight_search_result",
+  strict: true, schema }`. `strict` is assumed everywhere downstream: an `ok` response is
+  taken to match the schema without re-validation, which is what lets `run.ts` cast rather
+  than parse. `schema/search-input.json` already satisfies strict's constraints — it is the
+  object production sends — so a violation surfaces as a 400, never as a silent edit.
+- **Parsing** — `response.output_text`, `JSON.parse`. `status: "incomplete"` carries
+  `incomplete_details.reason`; a `refusal` content part maps to `status: "refusal"`. Neither
+  is a failed grade.
+- **Usage** — `input_tokens`, `output_tokens`, `total_tokens`,
+  `input_tokens_details.cached_tokens` → `cached`,
+  `output_tokens_details.reasoning_tokens` → `reasoning`.
+- **Knobs** — `temperature`, `reasoning: { effort }`, `max_output_tokens`.
+
+**`seed` does not exist on this surface.** It is a Chat Completions parameter, and the Worker
+pins `seed: 10`; the Responses API has no equivalent (verified against the installed SDK).
+Determinism here rests on `temperature: 0` alone, so run-to-run variance that the Worker
+suppresses is visible in this eval. That is arguably the more honest measurement, but it is a
+difference from production, and `repeats` is how it gets quantified.
 
 ### `anthropic.ts`
 
@@ -140,22 +134,21 @@ survive contact with three vendors: OpenAI constrains decoding under `strict`, A
 constrains it under `output_config`, and Gemini validates against a schema that cannot express
 the original.
 
-So: `npm run eval -- --check-schema` renders `schema/search-input.json` through all three
-`toProviderSchema` functions and diffs the results, listing every construct that did not
-survive. It runs at the start of every eval and the summary is written into `results.json`.
-A dashboard that shows Gemini losing on `gradeFilters` while its schema silently dropped a
-constraint is worse than no dashboard.
+The consequence is real — a dashboard showing Gemini losing on `gradeFilters` while its schema
+silently dropped a constraint is worse than no dashboard — but the machinery for detecting it
+was built too early. With one adapter whose translation is the identity, a parity checker
+compares a schema to itself and reports "exact" forever.
 
-Field names above are pinned to SDK versions and get verified against the installed SDK when
-each adapter is written.
+It lands in M4, alongside the first `toProviderSchema` that actually transforms anything, and
+the honest form is probably a one-time report at startup rather than a per-case grader.
 
 ---
 
 ## Token and cost accounting
 
-Every run records its `TokenUsage`, including failed runs — a response that failed to parse
-still burned tokens, and that is frequently where the tokens went. Retries are counted in
-`attempts` and their tokens are included; retried spend is real spend.
+Every run records its `TokenUsage`, including failed runs — a refusal or a truncated response
+still burned tokens, and that is frequently where the tokens went. Only a call that never
+reached the model reports zero.
 
 **`results.json` stores tokens, never dollars.** Prices change and old runs still need correct
 math. `eval.config.json` carries a per-model price table (per MTok: `input`, `output`,
@@ -166,10 +159,10 @@ Aggregates: per case, per language, per provider, per run. The dashboard gets to
 tokens-out, reasoning tokens, cost, and cost-per-case — the last one being the number that
 actually decides which model ships.
 
-Prompt caching is off for now. The system prompt is identical across every case, so enabling it
-would cut cost substantially; it is deferred only because `cache_read` / `cache_write` have to
-be broken out in the report before the cost math can absorb them. The fields exist from day one
-so turning it on later is a config change.
+OpenAI caches automatically, so `cached` is reported from day one; Anthropic's opt-in cache
+adds a written-vs-read distinction, and `TokenUsage` grows a field when that lands in M4. The
+system prompt is identical across every case, so the savings are worth having once the cost
+math can account for both rates separately.
 
 ---
 
@@ -183,40 +176,197 @@ type Grade = boolean | null          // null = not applicable to this case
 type Grader = (actual: SearchInput, expect: Expect, ctx: { today: string }) => Grade
 ```
 
-`ctx.today` carries the same date injected into the prompt. `gradeDateRange` cannot resolve
-`"+1 month"` without it, and `gradeRestraint` reads the whole `expect` object rather than one
-field — so the signature takes both, rather than pretending a two-argument form is enough.
+`ctx.today` carries the same date injected into the prompt. `gradeDateSanity` needs it to know
+which departures are in the past, and `gradeNoInventedParams` reads the whole `expect` object
+rather than one field — so the signature takes both, rather than pretending a two-argument form
+is enough. A grader that needs neither declares fewer parameters and stays assignable.
 
 | Function | Passes when |
 |---|---|
 | `gradeAction` | `result.action` matches expected (`get_tickets` / `handle_invalid`) |
 | `gradeSearchType` | `search_type` matches expected |
-| `gradeOrigin` | Per leg, departure codes match the expected set — order-insensitive, any listed alternative accepted |
+| `gradeOrigin` | Per leg, departure codes match the expected set — order-insensitive, any listed alternative accepted; or, for a fuzzy case, the returned name clears the similarity threshold |
 | `gradeDestination` | Same, for arrival |
-| `gradeDateRange` | `departure_date` and `return_date` match the expectation resolved against `ctx.today`, within the case's tolerance |
+| `gradeDateRange` | `departure_date` and `return_date` land inside the window the case states |
 | `gradeDuration` | `duration` matches expected |
 | `gradePassengers` | `passengers` object matches expected |
 | `gradeCabin` | `cabins` matches expected |
 | `gradeFilters` | `max_stops`, `max_price`, `flight_duration`, `connecting_airports`, `bags` all match |
-| `gradeRestraint` | Every field in the case's `must_be_null` is actually `null` |
-| `gradeSchema` | The returned object validates against `schema/search-input.json` |
+| `gradeNoInventedParams` | Every omitted nullable top-level or trip field is actually `null` |
+| `gradeDateSanity` | Every departure is on or after today; return is on or after departure; `multi` departures strictly increase |
+| `gradeTripShape` | No trip sets both `return_date` and `duration`; `oneway` sets neither; trip count matches `search_type` |
 
 **Returning `null`.** A grader returns `null` when the case's `expect` has nothing to say about
 that dimension. Not-applicable is excluded from the denominator — never counted as a pass.
-This is the one rule that keeps the percentages honest.
+`gradeNoInventedParams` separately enforces that an omitted nullable field stays null, so
+not-applicable never gives the model permission to invent a value. This keeps the per-dimension
+percentages honest without weakening the whole-case result.
 
 **Not applicable is not the same as not attempted.** A run whose `status` is not `ok` produces
 no grades at all: it lands in an error rate reported beside the pass rates, not as a column of
 `false`. An expired key scoring 0% on every dimension is the failure mode this prevents.
 
-**`gradeSchema` is back.** The original plan dropped it because `strict: true` made it
-constant at 1.00 — true of OpenAI alone. Anthropic's constrained decoding and Gemini's
-schema-subset validation are different mechanisms with different failure modes, so the column
-measures something real again. Expect it to be 1.00 for OpenAI and Anthropic and to be where
-Gemini's translated-schema problems first show up.
+**The last two take no `expect` at all.** They are invariants of any valid search, so they
+grade every `get_tickets` case for free and return `null` only for `handle_invalid`. They exist
+because three separate layers fail to enforce them:
+
+| Rule | JSON Schema | `validateAiSearchInput` | Downstream |
+|---|---|---|---|
+| Departure not in the past | no | no | **silently clamps to tomorrow** (`prepareDate`) |
+| Not both `return_date` and `duration` | prose only | no | **`return_date` wins, `duration` dropped** |
+
+Both are invisible in production — no error, no log, just a different search than the traveler
+asked for. That is precisely what makes them worth a column here. The eval calls the model API
+directly and never runs `prepareDate`, so it grades the raw answer rather than the repaired one.
+
+The exclusivity rule is also the counterexample to leaning on `strict: true`. Constrained
+decoding guarantees the *shape*; it says nothing about two fields being mutually exclusive.
+Expressing that would mean restructuring `trips.items` into an `anyOf` of three variants, which
+the Worker does not do — so the model is free to emit both, and does not get corrected.
+
+Note what is **not** a rule: a roundtrip with `return_date` and `duration` both null is
+legitimate. Production falls back to `DEFAULT_ROUNDTRIP_DURATION`. The rule is "never both",
+not "exactly one".
+
+**Still deliberately absent: schema conformance.** `strict: true` is assumed, so the column
+would read 1.00 and measure the API rather than the model. Gemini is the case that could
+change this — its schema dialect cannot express the contract exactly — but that is an M4
+question, and the answer there is more likely a one-time translation report than a per-case
+grader.
 
 **Still deliberately absent:** *business rules* (`validateAiSearchInput`) — overlaps search
 type, dates, and passengers.
+
+---
+
+## Fuzzy locations
+
+Some queries name a region, not an airport — "west Europe", "Texas", "nice beach towns in Asia".
+No IATA code means any of them, so the model returns `code: "n/a"` with the traveler's words in
+`name`, and production expands that in a second model call. `codesMatch` compares codes, `"n/a"`
+is not one, so those cases currently grade as location failures however well they were handled.
+
+Nothing about the model's contract changes. The schema already says "use `n/a` when unavailable"
+and `v6` stays byte-exact; the change is the dataset and the two location graders.
+
+### The expectation
+
+```ts
+interface LocationExpect {
+  any_code?: string[]
+  /** The intended location has no IATA code. Absent means false. */
+  fuzzy?: boolean
+  /** What the model's `name` is compared against, when fuzzy. */
+  name?: string
+}
+```
+
+```json
+"departure": { "any_code": ["BOS"] },
+"arrival":   { "fuzzy": true, "name": "western Europe" }
+```
+
+The twenty existing cases need no edits — absent `fuzzy` is `false`, which is what they already
+mean.
+
+| `expect` | model's `code` | result |
+|---|---|---|
+| `any_code` | an IATA code | unchanged code match |
+| `any_code` | `"n/a"` | fail — `"n/a"` is in no `any_code` list, so this already works |
+| `fuzzy` | `"n/a"` | embed both names, cosine, `>= 0.80` |
+| `fuzzy` | an IATA code | fail — a region collapsed into one airport |
+
+### `src/semantic.ts`
+
+The whole file:
+
+```ts
+export interface GradingConfig {
+  embedding_model: string
+  similarity_threshold: number
+}
+
+function cosineSimilarity(a: number[], b: number[]): number { /* dot / (magA * magB) */ }
+
+/** Embeds both names and reports whether they clear the configured threshold. */
+export async function isSimilar(
+  expected: string,
+  actual: string,
+  config: GradingConfig,
+): Promise<boolean> {
+  const result = await getClient().embeddings.create({
+    model: config.embedding_model,
+    input: [expected, actual],
+  })
+
+  const score = cosineSimilarity(result.data[0]!.embedding, result.data[1]!.embedding)
+  return score >= config.similarity_threshold
+}
+```
+
+Model and threshold live in `eval.config.json` under `grading`, and the block is copied into
+`results.json` — for the same reason `today` is. Swapping the embedding model rescores every
+fuzzy case at once, so a run that does not say which ruler it used cannot be compared to another.
+
+### Measured, not guessed
+
+`text-embedding-3-small`, the six pairs the threshold exists to separate:
+
+| expected | actual | score | want |
+|---|---|---|---|
+| beach towns in Asia | Nice beach towns in Asia | **0.928** | pass |
+| western Europe | West Europe | **0.886** | pass |
+| Texas | Texas, USA | **0.600** | pass ✗ |
+| western Europe | Eastern Europe | **0.613** | fail |
+| Texas | Dallas | **0.426** | fail |
+| beach towns in Asia | Asia | **0.427** | fail |
+
+0.80 holds for multi-word regions with room to spare, and the qualifier-dropping failure the
+column exists to catch — "beach towns in Asia" answered with "Asia" — sits far below it at 0.427.
+
+The one that does not work is short names. `Texas`/`Texas, USA` scores 0.600, *below*
+`western Europe`/`Eastern Europe` at 0.613, so **no threshold separates them**: lowering the bar
+far enough to accept the suffix also accepts the opposite half of a continent. Short strings carry
+too little signal for cosine to rank them sensibly, and that is a property of the instrument, not
+of a badly chosen number.
+
+The fix is at the dataset level, not the threshold: for a one-word region, write `name` as the
+model will actually say it, and accept that a case like "Texas" is asserting near-exact wording.
+Multi-word regions — the ones this feature is actually for — have no such problem.
+
+### `grade.ts`
+
+`Grader` becomes `Grade | Promise<Grade>`, `gradeAll` gains an `await`, and `run.ts` gains one on
+its `gradeAll` call. `gradeOrigin` and `gradeDestination` branch on `fuzzy`; the other ten graders
+are untouched and stay synchronous.
+
+```ts
+async function locationsMatch(actual: AiSearchLocation[], expected: LocationExpect) {
+  if (actual.length === 0) return false
+  if (!expected.fuzzy) return actual.every((l) => expected.any_code!.includes(l.code))
+
+  for (const location of actual) {
+    if (location.code.trim().toLowerCase() !== 'n/a') return false
+    if (!(await similar(expected.name!, location.name))) return false
+  }
+  return true
+}
+```
+
+Making the graders async rather than pre-resolving the comparisons in `run.ts` is the cheaper
+trade: it costs one `await` in `gradeAll` and buys back a whole layer of plumbing — no check
+records, no context field, no pre-pass over the trips to find the pairs.
+
+### Deliberately cut
+
+- **The score is not recorded.** Re-tuning the threshold means re-running. Both compared strings are
+  already in `results.json` — `expect` and the raw model output — so the pairs stay recoverable
+  even when the numbers do not.
+- **No embedding cache.** Every repeat of a fuzzy case pays one call. At `text-embedding-3-small`
+  prices and a handful of fuzzy cases, that is not a number anyone will notice.
+- **No error handling.** An embedding failure throws out of `gradeAll` and takes the run with it.
+  A run is minutes long, so the fix is to re-run — but this is the cut with teeth, and the first
+  one to reverse if the endpoint turns out flaky.
 
 ---
 
@@ -239,13 +389,13 @@ flight-search-eval/
 ├─ src/
 │  ├─ providers/
 │  │  ├─ types.ts                # ModelRequest, ModelResponse, TokenUsage, Provider
-│  │  ├─ retry.ts                # shared backoff, so `attempts` means one thing
+│  │  ├─ retry.ts                # written, not wired up — see Running
 │  │  ├─ openai.ts
 │  │  ├─ anthropic.ts
-│  │  ├─ gemini.ts
-│  │  └─ index.ts                # name → Provider
+│  │  └─ gemini.ts
 │  ├─ types.ts                   # Case, Expect, AiSearchInput, ParsedResult
-│  ├─ grade.ts                   # the eleven graders
+│  ├─ semantic.ts                # cosine similarity over two embeddings
+│  ├─ grade.ts                   # the twelve graders
 │  ├─ run.ts                     # load → call → grade → write
 │  └─ dashboard.ts               # results.json → index.html
 └─ results/
@@ -271,13 +421,19 @@ cases. Per-provider blocks instead:
 ```json
 {
   "prompt": "v6",
+  "today": "04/15/2027",
   "repeats": 3,
-  "max_tokens": 4096,
-  "concurrency": 4,
   "providers": {
-    "openai":    { "model": "gpt-5.6-terra", "params": { "temperature": 0, "seed": 10 } },
-    "anthropic": { "model": "claude-opus-5", "params": { "effort": "medium" } },
-    "gemini":    { "model": "gemini-3-pro",  "params": { "temperature": 0, "seed": 10 } }
+    "openai":    { "model": "gpt-5.6-terra", "max_tokens": 800,
+                   "params": { "temperature": 0, "reasoning": { "effort": "none" } } },
+    "anthropic": { "model": "claude-opus-5", "max_tokens": 4096,
+                   "params": { "effort": "medium" } },
+    "gemini":    { "model": "gemini-3-pro",  "max_tokens": 4096,
+                   "params": { "temperature": 0, "seed": 10 } }
+  },
+  "grading": {
+    "embedding_model": "text-embedding-3-small",
+    "similarity_threshold": 0.8
   },
   "pricing": {
     "claude-opus-5": { "input": 5.00, "output": 25.00, "cache_read": 0.50, "cache_write": 6.25 }
@@ -327,8 +483,10 @@ Dates come back as `MM/DD/YY`, or `MM/DD/YY-MM/DD/YY` for an approximate date; `
 string of days, `"7"` or `"3-5"`. The date injected into the prompt is `MM/DD/YYYY` — a
 different format from the one the model is asked to emit. `gradeDateRange` has to parse both.
 
-Validating the envelope is vendor-neutral, so `run.ts` does it and sets `schema_error`;
-adapters return the parsed JSON exactly as the model produced it and never inspect its shape.
+Adapters return the parsed JSON exactly as the model produced it and never inspect its shape.
+`run.ts` does not re-validate the envelope either: `strict: true` already guarantees it, so
+the result is cast, not parsed. That assumption is the reason this stays short — if a vendor
+without constrained decoding is ever added, validation has to come back with it.
 
 ---
 
@@ -349,12 +507,10 @@ One case per line. Shown expanded here; it is one line in the file.
       {
         "departure":      { "any_code": ["ORD", "CHI"] },
         "arrival":        { "any_code": ["TYO", "NRT", "HND"] },
-        "departure_date": { "relative": "+1 month", "tolerance_days": 3 },
+        "departure_date": "02/01/26-02/28/26",
         "duration":       "7"
       }
-    ],
-    "must_be_null": ["cabins", "max_stops", "max_price", "flight_duration",
-                     "connecting_airports", "bags"]
+    ]
   }
 }
 ```
@@ -366,22 +522,71 @@ graders that read them from the top would have been wrong on every case.
 
 Five rules:
 
-1. **Absent means don't care** — that grader returns `null`. Explicit `null` means must be null.
-   Never assert a field the query didn't determine.
+1. **Absent nullable fields must be null.** Their dimension grader returns `null`, because the
+   query did not assert a value, while `gradeNoInventedParams` fails if the model supplies one.
+   Every `get_tickets` case must still provide `search_type`, `trips`, and each trip's departure
+   and arrival because the response schema requires those fields to contain values.
 2. **Alternatives, not single answers.** Tokyo is TYO, NRT, or HND; all three are correct.
-3. **Dates are relative expressions**, resolved against `ctx.today` — the same date passed to
-   the prompt. Frozen date strings rot within weeks.
+   A location with no code at all — "Texas", "west Europe" — is asserted with
+   `{ "fuzzy": true, "name": "..." }` and graded by similarity. See **Fuzzy locations**.
+3. **Dates are literal, written against the pin.** A case's `departure_date` and `return_date`
+   are `MM/DD/YY` or `MM/DD/YY-MM/DD/YY` strings — the shape the model answers in — and the
+   model's date has to land inside them. A query naming a day gets that one day and accepts
+   nothing else. A vague query gets the window it spans, and any answer inside passes, whether
+   the model returns a single day or a narrower range:
+
+   | Query | Expected, at pin 01/01/2026 |
+   |---|---|
+   | "on March 3" | `"03/03/26"` |
+   | "next month" | `"02/01/26-02/28/26"` |
+   | "in two weeks" | `"01/12/26-01/18/26"` |
+
+   This replaces the `relative` / `next` / `date` forms an earlier draft resolved at grading
+   time. Those computed the expected date with the same month-and-year arithmetic the model is
+   being graded on — a second implementation standing behind the scoring, and one that made a
+   case unreadable on its own: nothing in `{ "next": "03/02" }` says which year it will assert.
+   A written-out window says exactly which answers count, and the case is the entire record of
+   it. The cost is that the dataset is pinned; see **The pinned date**.
 4. **Types mirror the schema exactly.** `duration` is `"7"` because the schema says string.
    Graders compare, they do not coerce; a coercion is a bug hidden in the scoring.
-5. **`must_be_null` names top-level `params` fields only.** Trip-level nulls belong to
-   `gradeDateRange` and `gradeDuration`. An unrecognized field name is a load-time error with
-   a `file:line`, not a quiet failure against every model — which is what a typo would
-   otherwise look like on the dashboard.
+5. **No null-field lists.** `gradeNoInventedParams` derives restraint from omissions at both
+   the top level and inside `trips[]`. This is field-aware rather than a recursive key diff:
+   location and date expectations are matcher objects, not literal copies of model output.
 
-**Tolerance** is the absolute difference in days between the resolved expected `departure_date`
-and the actual one, applied independently to `return_date`. Keep it at 0 for explicit dates and
-1–3 for vague ones. The `31` in the original draft would have passed nearly any date in the
-month and quietly turned `gradeDateRange` green.
+**The width of the window is the tolerance**, stated rather than computed, and `departure_date`
+and `return_date` carry their own. Keep each one to what the query actually permits: a single
+day for an explicit date, the calendar month for "next month". A window wider than the query
+passes answers that are wrong and quietly turns `gradeDateRange` green.
+
+### The pinned date
+
+`eval.config.json` carries `today` (`MM/DD/YYYY`), overridable per run with `--today`. It is
+**01/01/2026**, and it is required — `run.ts` throws without it rather than falling back to the
+real date, which would tell the model it is some other day while the dataset keeps asserting
+January-2026 answers. `results.json` records the pin, so every run is self-describing.
+
+**The pin and the dataset are coupled**, and now that the dates are literal the coupling is
+visible. "March 3" is `"03/03/26"` because the pin is January 2026; with an August 2026 pin the
+same query means March 2027 and every such case is wrong until it is rewritten. Moving the pin
+is a dataset edit that shows up in the diff, rather than a silent regrade.
+
+**Do not auto-derive the pin from the dataset.** It is the obvious next step and it is a trap.
+Computed as "earliest case date minus a month", adding one case that mentions January 2027
+drags the pin back to December 2026 and changes what "next month" means to the model for every
+other case, while their written-out windows sit still — a global regrade with nothing in the
+diff to show it.
+
+Pin it by hand, and **treat every case's dates as landing strictly after it**. That is an
+assumption the dataset author holds up, not something the harness verifies: a load-time check
+existed briefly and bought nothing that reading the cases does not.
+
+`gradeDateSanity` is unaffected by that assumption and stays. It grades the *model's* dates
+against the pin, which is a different question from whether the cases are well-formed — and it
+is the only place a past departure is ever caught, since production clamps one to tomorrow
+without comment.
+
+Keep the pin plausible — near the real present. A pin years in the past invites the model to
+reason about a world it knows has passed.
 
 `es.jsonl` reuses the same `id` values so the two languages line up in the dashboard.
 
@@ -394,30 +599,35 @@ month and quietly turned `gradeDateRange` green.
 ```json
 {
   "run_id": "2026-08-26T2210Z",
-  "today": "2026-08-26",
-  "config": { "prompt": "v6", "repeats": 3,
-              "providers": { "anthropic": { "model": "claude-opus-5",
-                                            "params": { "effort": "medium" } } } },
-  "schema_parity": { "openai": "exact", "anthropic": "exact",
-                     "gemini": ["dropped additionalProperties", "dropped format: uri"] },
+  "today": "08/26/2026",
+  "model": "gpt-5.6-terra",
+  "prompt": "v6",
+  "repeats": 3,
   "cases": [
     {
       "id": "rt-duration-01", "lang": "en",
       "text": "round trip from Chicago to Tokyo next month for a week, 2 adults",
+      "expect": { },
       "runs": [
-        { "provider": "anthropic",
+        { "repeat": 1,
           "status": "ok",
+          "passed": false,
           "grades": { "gradeAction": true, "gradeOrigin": true,
                       "gradeDestination": false, "gradeCabin": null },
           "actual": { },
           "usage": { "input": 1840, "output": 96, "reasoning": 0,
-                     "cache_read": 0, "cache_write": 0, "total": 1936, "raw": { } },
-          "latency_ms": 812, "attempts": 1 }
+                     "cached": 0, "total": 1936 },
+          "latency_ms": 812 }
       ]
     }
   ]
 }
 ```
+
+A run whose `status` is `ok` has a `passed` flag that is false when any applicable grade is
+false. A run whose status is not `ok` has neither `grades` nor `passed`; that absence keeps a
+bad API key out of the pass rates. Once M4 adds vendors, `runs[]` gains a `provider` field and
+the top-level `model` becomes the per-provider block.
 
 `today` is recorded because without it a rerun of the graders against an old results file
 resolves `"+1 month"` from a different anchor and silently regrades every date case.
@@ -452,53 +662,89 @@ npm run eval -- --provider anthropic
 npm run eval -- --provider openai,anthropic   # paired comparison, identical cases
 npm run eval -- --lang en
 npm run eval -- --repeats 3
-npm run eval -- --model gpt-5.4-mini          # only valid with a single --provider
+npm run eval -- --model gpt-5.4-mini
 npm run eval -- --prompt v7
-npm run eval -- --check-schema                # parity report only, no model calls
+npm run eval -- --limit 2                     # first N cases, for cheap iteration
+npm run eval -- --today 04/15/2027            # override the pin — case dates are written for it
 ```
 
-`--check-schema` costs nothing and answers "is this comparison honest" before spending on a run.
+Every flag takes a value, which is what keeps the argument parser to three lines.
 
-Calls run at `concurrency` (default 4) with exponential backoff on 429 and 5xx. 20 cases ×
-3 repeats × 3 providers is 180 calls; unbounded that is a rate-limit wall, and a retried call
-still costs tokens, so `attempts` is recorded.
+**Calls are sequential.** 20 cases × 3 repeats × 3 providers is 180 calls, which is minutes,
+not hours — and a worker pool is a real amount of code to read in exchange for time nobody is
+waiting on. `providers/retry.ts` is written and deliberately not wired up for the same reason:
+until rate limits actually show up in the error column, backoff is machinery with no job.
+Both come back the moment a run is slow enough or flaky enough to justify them.
 
 ---
 
 ## Milestones
 
 **M1 — the loop. Done.**
-`providers/types.ts`, `providers/retry.ts`, `providers/openai.ts`, `run.ts`, and three graders
-(`gradeAction`, `gradeSearchType`, `gradeRestraint`). Four English cases. Writes `results.json`
-with usage recorded, prints a summary to the console. No dashboard — prove the call-and-grade
-loop before building the view.
+`providers/types.ts`, `providers/openai.ts`, `run.ts`, and three graders (`gradeAction`,
+`gradeSearchType`, `gradeNoInventedParams`). Four English cases. Writes `results.json` with usage
+recorded, prints a summary to the console. No dashboard — prove the call-and-grade loop before
+building the view.
 
-Verified against a local mock of the Chat Completions endpoint, which exercises the whole path
-without spending anything: mixed pass/fail/not-applicable grading, `--repeats 3`, transient
-5xx retried to success, exhausted retries recorded as `api_error` with `attempts: 3`, a
-malformed envelope recorded as `schema_error` **with its tokens still counted**, and a mistyped
-`must_be_null` field rejected at load with a `file:line`. Total API failure prints `—` per
-grader, never 0% — the property the `status` field exists for.
+`run.ts` reads top to bottom in three passes — load, run, report — with sequential calls and no
+helper indirection. Assuming `strict: true` is what buys most of that: an `ok` response is
+known to match the schema, so the result is cast rather than validated, and envelope checking,
+schema-parity diffing, and `gradeSchema` all stop being necessary.
 
-`--check-schema` and `--dry-run` run without credentials.
+Verified against a local mock of the Responses API, which exercises the whole path without
+spending anything: mixed pass/fail/not-applicable grading, `--repeats 3`, and the three non-`ok`
+statuses — `error`, `refusal`, and `incomplete` — where refusal and incomplete still count their
+tokens. Restraint is derived from omitted expectations, so there is no null-field list to
+mistype. Total API failure prints `—` per grader, never 0%, which is the property the `status`
+field exists for.
 
-**M2 — full graders and dataset.** ← next
-The other eight graders. 10 English + 10 Spanish cases.
+**M2 — full graders and dataset. Done.**
+The other nine graders. 10 English + 10 Spanish cases, same ids in both.
 
-The date graders are the work here: the prompt is handed `MM/DD/YYYY` while the model emits
-`MM/DD/YY` and `MM/DD/YY-MM/DD/YY` ranges, so resolving `"+1 month"` against `ctx.today` and
-comparing within tolerance means parsing two formats and a range on each side.
+`dates.ts` is the whole date layer: `toDay` and `toRange`, 23 lines, both pure parsing.
+`gradeDateRange` and `gradeDateSanity` are then range comparisons on day numbers. `toDay`
+returns `NaN` rather than throwing on a malformed date, which is what lets both grade the
+format instead of crashing on it — the schema's date `pattern` is commented out, so the format
+is not actually guaranteed — and `NaN` failing every comparison is what makes a malformed model
+date fall out as a miss with no special case for it.
 
-**M3 — the other two adapters.**
+`resolveDate` lived here too, until the expected dates became literal windows. Case dates are
+assumed to land after the pin, so `run.ts` does not check them and imports nothing from
+`dates.ts`.
+
+Verified by having the mock synthesize each case's *ideal* answer from its own `expect`, then
+corrupting one dimension at a time. A clean run is 100% across all twelve graders; each of the
+eleven corruptions flips exactly the grader it should. Two cross-flips, both correct: shifting
+one leg of a multi-city trip past the next also fails `gradeDateSanity` on ordering, and adding
+a `duration` where a `return_date` already exists also fails `gradeTripShape`.
+
+Both the fixture and its corruptions read the pin from `eval.config.json` rather than hardcoding
+it. A fixture pinned to a stale date reports a grader as broken when only the fixture is.
+
+**M3 — fuzzy locations. Done.**
+`src/semantic.ts`, the `fuzzy`/`name` fields on `LocationExpect`, the `grading` config block, and
+the two location graders going async. Independent of the schema, the prompt, and the provider
+interface, so the two new adapters land on a location column that already works.
+
+Verified against the real embeddings endpoint with synthesized results: a concrete case still
+grades on codes, a fuzzy case matches on name, and each of the four ways to get it wrong — a
+give-up `"n/a"` on a resolvable place, the wrong region, a region collapsed to one airport, a
+dropped qualifier — fails on its own. `"N/A"` triggers the check like `"n/a"`. An unasserted side
+still returns `null`.
+
+**No dataset cases yet.** The graders are wired and the twenty existing cases are unaffected
+(absent `fuzzy` is `false`), so nothing exercises the fuzzy path in a real run until cases land.
+
+**M4 — the other two adapters.**
 `anthropic.ts`, `gemini.ts`, `toProviderSchema`, and `--check-schema`. Before the dashboard,
 not after: a dashboard designed against one provider's results gets rebuilt the moment a
 second one lands, and the schema-parity output is a thing the dashboard has to display.
 
-**M4 — dashboard.**
+**M5 — dashboard.**
 `dashboard.ts`. Reads `results.json`, writes `index.html`, including token and cost columns
 and the parity banner.
 
-**M5 — configurability.**
+**M6 — configurability.**
 Repeats, model override, prompt variants. Two prompt files, one run, paired comparison on
 identical cases.
 
@@ -510,6 +756,9 @@ identical cases.
   handicap: `v6` was tuned against OpenAI. A per-vendor prompt variant would measure each
   vendor at its best but stop being a controlled comparison. Run both and report both.
 - **Prompt caching.** Off for now; the fields are logged so it is a config change later.
+- **Location-name language.** `v6` does not say what language `name` comes back in, so `es`
+  cases may score against an English name. Write each case's `name` in its own language, then
+  check the raw output of the first run — that is what settles it, and 0.80 with it.
 - **Prompt drift** from the deployed Worker. Header comment now, CI check later.
 - **Scope of intent.** Cases must compile to checkable expectations. "Somewhere nice for a
   honeymoon" does not. Worth stating in the README.
