@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "eval": "tsx src/run.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dashboard": "tsx src/dashboard/index.ts"
   },
   "dependencies": {
     "openai": "^7.7.0"

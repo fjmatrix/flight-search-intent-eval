@@ -119,6 +119,33 @@ function dateMatches(actual: string | null, expected: string | undefined): boole
   return first >= from && last <= to
 }
 
+/**
+ * '7' or '3-5' to [shortest, longest] nights. A trailing '-' leaves the top
+ * open: '14-' is [14, Infinity]. Only a case writes that form — it is never
+ * sent to the model and never appears in a response — so "at least two weeks"
+ * needs no new wire format. A malformed value on either side is NaN, and every
+ * comparison against NaN is false, so it fails.
+ */
+function toNights(value: string): [number, number] {
+  const [low, high] = value.trim().split('-')
+  const shortest = low === '' ? NaN : Number(low)
+  if (high === undefined) return [shortest, shortest]
+  return [shortest, high === '' ? Infinity : Number(high)]
+}
+
+/**
+ * Mirrors dateMatches: the case names the stays it accepts and the model's
+ * answer has to sit inside that span. A query pinning one length accepts only
+ * that length; '2-3 nights' accepts 2, 3, or the range itself.
+ */
+function durationMatches(actual: string | null, expected: string | undefined): boolean {
+  if (expected === undefined) return true
+  if (!actual) return false
+  const [first, last] = toNights(actual)
+  const [from, to] = toNights(expected)
+  return first >= from && last <= to
+}
+
 // --- graders -----------------------------------------------------------------
 
 export function gradeAction(actual: ParsedResult, expect: Expect): Grade {
@@ -179,7 +206,7 @@ export function gradeDuration(actual: ParsedResult, expect: Expect): Grade {
   if (!expect.trips?.some((trip) => trip.duration !== undefined)) return null
   const paired = pairTrips(actual, expect)
   if (!paired) return false
-  return paired.every(([trip, e]) => e.duration === undefined || trip.duration === e.duration)
+  return paired.every(([trip, e]) => durationMatches(trip.duration, e.duration))
 }
 
 export function gradePassengers(actual: ParsedResult, expect: Expect): Grade {

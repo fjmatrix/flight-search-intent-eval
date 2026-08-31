@@ -59,6 +59,7 @@ export interface TripExpect {
   /** 'MM/DD/YY' or 'MM/DD/YY-MM/DD/YY'. The model's date must land inside it. */
   departure_date?: string
   return_date?: string
+  /** Nights, '7' or '3-5'. The model's stay must land inside it; '14-' leaves the top open. */
   duration?: string
 }
 

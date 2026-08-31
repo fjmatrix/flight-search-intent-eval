@@ -19,6 +19,15 @@ interface Config {
   providers: Record<string, { model: string; max_tokens: number; params: Record<string, unknown> }>
   /** Embedding model and threshold for fuzzy locations. Changing either rescores every one. */
   grading: GradingConfig
+  /** USD per million tokens, per model. null when the price is not known yet. */
+  pricing: Record<string, Pricing | null>
+}
+
+interface Pricing {
+  input: number
+  output: number
+  cache_read: number
+  cache_write: number
 }
 
 // --- arguments: --key value, every flag takes a value ------------------------
@@ -37,6 +46,10 @@ const grading = config.grading
 const promptName = args.prompt ?? config.prompt
 const repeats = Number(args.repeats ?? config.repeats)
 const model = args.model ?? openaiConfig.model
+// Reasoning effort is part of what identifies a run: the same model at two
+// efforts is two rows, so it goes in the filename and the results header.
+const effort = (openaiConfig.params.reasoning as { effort?: string } | undefined)?.effort ?? null
+const pricing = config.pricing?.[model] ?? null
 
 const now = new Date()
 const iso = now.toISOString()
@@ -144,11 +157,25 @@ for (const entry of results) {
 }
 
 const outDir = `results/${runId}`
+// One file per model and effort, so a directory holds a whole comparison and a
+// re-run of one model leaves the others alone. Slashes appear in some model ids.
+const outFile = `${[model, effort].filter(Boolean).join('-').replace(/[^\w.@-]+/g, '-')}.json`
 fs.mkdirSync(outDir, { recursive: true })
 fs.writeFileSync(
-  `${outDir}/results.json`,
+  `${outDir}/${outFile}`,
   JSON.stringify(
-    { run_id: runId, today, model, prompt: promptName, repeats, grading, by_tag: byTag, cases: results },
+    {
+      run_id: runId,
+      today,
+      model,
+      effort,
+      prompt: promptName,
+      repeats,
+      grading,
+      pricing,
+      by_tag: byTag,
+      cases: results,
+    },
     null,
     2,
   ) + '\n',
@@ -205,7 +232,7 @@ for (const entry of results) {
     if (run.status !== 'ok') console.log(`  ! ${entry.lang}/${entry.id} #${run.repeat} ${run.status}: ${run.error}`)
   }
 }
-console.log(`\n  → ${outDir}/results.json`)
+console.log(`\n  → ${outDir}/${outFile}`)
 
 function percent(passed: number, total: number): string {
   return total === 0 ? '—' : `${Math.round((passed / total) * 100)}%`
