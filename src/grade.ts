@@ -1,5 +1,5 @@
 import { toDay, toRange } from './dates.ts'
-import { isSimilar, type GradingConfig } from './semantic.ts'
+import { normalize, scoreNames, type GradingConfig } from './semantic.ts'
 import type {
   AiSearchLocation,
   AiSearchTrip,
@@ -42,17 +42,6 @@ function same(a: unknown, b: unknown): boolean {
   return a === b
 }
 
-/** `findIndex` for a predicate that has to be awaited; -1 when none matches. */
-async function findIndexAsync<T>(
-  items: T[],
-  predicate: (item: T) => Promise<boolean>,
-): Promise<number> {
-  for (const [i, item] of items.entries()) {
-    if (await predicate(item)) return i
-  }
-  return -1
-}
-
 /**
  * Expected trips paired with the actual ones, or null when they cannot be
  * compared at all. That null means "counts as a failure", not "not applicable" —
@@ -89,20 +78,44 @@ async function locationsMatch(
   const unmatched = [...expected.names!]
   if (actual.length !== unmatched.length) return false
 
+  // Identical names pair off here, so a set the model got exactly right reaches
+  // the return below without embedding anything.
+  const unpaired: string[] = []
   for (const location of actual) {
     // The test case says this place has no IATA code, so any code here is wrong.
     // Failing now also skips an embedding call that could not change the answer.
     if (location.code.trim().toLowerCase() !== 'n/a') return false
 
+    const index = unmatched.findIndex((name) => normalize(name) === normalize(location.name))
+    if (index === -1) unpaired.push(location.name)
+    else unmatched.splice(index, 1)
+  }
+  if (unpaired.length === 0) return true
+
+  // One request scores every leftover pair; choosing among them is arithmetic.
+  const scores = await scoreNames(unmatched, unpaired, ctx.grading)
+
+  // Every pair that was scored, printed whether or not it clears the threshold.
+  for (const [row, expectedName] of unmatched.entries()) {
+    for (const [column, actualName] of unpaired.entries()) {
+      console.log(
+        `expected:${expectedName} ; model output: ${actualName}; cosineSimilarity:${scores[row]![column]!}`,
+      )
+    }
+  }
+
+  const claimed = unmatched.map(() => false)
+
+  return unpaired.every((_, column) => {
     // First name that clears the threshold claims this location. The names in a
     // case are far enough apart that no later location wants the same one.
-    const index = await findIndexAsync(unmatched, (name) =>
-      isSimilar(name, location.name, ctx.grading),
+    const index = unmatched.findIndex(
+      (_, row) => !claimed[row] && scores[row]![column]! >= ctx.grading.similarity_threshold,
     )
     if (index === -1) return false
-    unmatched.splice(index, 1)
-  }
-  return true
+    claimed[index] = true
+    return true
+  })
 }
 
 /**

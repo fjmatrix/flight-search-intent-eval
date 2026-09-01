@@ -13,6 +13,8 @@ export interface ModelRequest {
   schema: JsonSchema
   model: string
   maxTokens: number
+  /** Reasoning depth. Each adapter puts it where its own vendor wants it. */
+  effort: string | null
   /** Vendor-specific knobs, passed through from eval.config.json. */
   params: Record<string, unknown>
 }
@@ -22,7 +24,10 @@ export interface TokenUsage {
   output: number
   /** null when the vendor does not report reasoning tokens separately. */
   reasoning: number | null
+  /** The part of `input` served from cache, billed at the cache_read rate. */
   cached: number
+  /** The part of `input` written to cache, billed at the cache_write rate. */
+  written: number
   total: number
 }
 
@@ -47,5 +52,6 @@ export const NO_USAGE: TokenUsage = {
   output: 0,
   reasoning: null,
   cached: 0,
+  written: 0,
   total: 0,
 }

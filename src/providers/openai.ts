@@ -21,6 +21,7 @@ function readUsage(usage: OpenAI.Responses.ResponseUsage | undefined): TokenUsag
     output: usage.output_tokens,
     reasoning: usage.output_tokens_details.reasoning_tokens,
     cached: usage.input_tokens_details.cached_tokens,
+    written: usage.input_tokens_details.cache_write_tokens ?? 0,
     total: usage.total_tokens,
   }
 }
@@ -44,6 +45,7 @@ export const openai: Provider = {
             schema: req.schema,
           },
         },
+        ...(req.effort ? { reasoning: { effort: req.effort as OpenAI.ReasoningEffort } } : {}),
         ...req.params,
       })
 

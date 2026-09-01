@@ -1,11 +1,11 @@
-{"id": "rt-bog-par-longstay", "lang": "en", "text": "Bogota to Paris for 75-85 days. No preferences for dates", "tags": ["roundtrip"], "expect": {"action": "get_tickets", "search_type": "roundtrip", "trips": [{"departure": {"any_code": ["BOG"]}, "arrival": {"any_code": ["PAR", "CDG", "ORY", "BVA"]}, "duration": "75-85"}]}}
+
 {"id": "rt-bhx-pak-3wk-plus", "lang": "en", "text": "birmingham to lahore or islamabad around 3 weeks or little more from 15 March", "tags": ["roundtrip","flexible-date"], "expect": {"action": "get_tickets", "search_type": "roundtrip", "trips": [{"departure": {"any_code": ["BHX"]}, "arrival": {"any_code": ["LHE", "ISB"]}, "departure_date": "03/15/26", "duration": "21-"}]}}
 {"id": "fuzzy-region-01", "lang": "en", "text": "Somewhere warm in west europe for 10 to 15 days in Oct", "tags": ["roundtrip", "fuzzy-location", "flexible-date"], "expect": {"action": "get_tickets", "search_type": "roundtrip", "trips": [{"departure": {"fuzzy": true, "names": ["n/a"]}, "arrival": {"fuzzy": true, "names": ["somewhere warm in western Europe"]}, "departure_date": "10/01/26-10/31/26", "duration": "10-15"}]}}
 
 {"id": "ow-5countries-ist", "lang": "en", "text": "Flight tickets from holland, belgium, denmark, sweden, germany to Istanbul between July 3rd and July 10th. nonstop", "tags": ["oneway", "fuzzy-location", "flexible-date"], "expect": {"action": "get_tickets", "search_type": "oneway", "trips": [{"departure": {"fuzzy": true, "names": ["Holland", "Belgium", "Denmark", "Sweden", "Germany"]}, "arrival": {"any_code": ["IST", "SAW"]}, "departure_date": "07/03/26-07/10/26"}], "max_stops": 0}}
 
 {"id": "ow-sea-rdu-springbreak", "lang": "en", "text": "find cheap flights from Seattle to Raleigh during spring break", "tags": ["oneway", "flexible-date"], "expect": {"action": "get_tickets", "search_type": "oneway", "trips": [{"departure": {"any_code": ["SEA", "BFI"]}, "arrival": {"any_code": ["RDU"]}, "departure_date": "03/01/26-04/15/26"}]}}
-
+{"id": "rt-bog-par-longstay", "lang": "en", "text": "Bogota to Paris for 75-85 days. No preferences for dates", "tags": ["roundtrip"], "expect": {"action": "get_tickets", "search_type": "roundtrip", "trips": [{"departure": {"any_code": ["BOG"]}, "arrival": {"any_code": ["PAR", "CDG", "ORY", "BVA"]}, "duration": "75-85"}]}}
 
 {"id": "mc-rom-mid-par-nodate", "lang": "en", "text": "rome to anywhere european for 2-3 nights, then to Paris", "tags": ["multi", "fuzzy-location"], "expect": {"action": "get_tickets", "search_type": "multi", "trips": [{"departure": {"any_code": ["ROM", "FCO", "CIA"]}, "arrival": {"fuzzy": true, "names": ["anywhere in Europe"]}, "duration": "2-3"}, {"departure": {"fuzzy": true, "names": ["anywhere in Europe"]}, "arrival": {"any_code": ["PAR", "CDG", "ORY", "BVA"]}}]}}
 

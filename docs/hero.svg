@@ -1,0 +1,82 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" role="img" aria-labelledby="t d">
+<title id="t">flight-search-eval</title>
+<desc id="d">A Spanish natural-language flight query becomes a structured search specification, which is then scored on twelve independent grading dimensions.</desc>
+
+<rect width="1200" height="420" rx="16" fill="#0B0E13"/>
+
+<!-- masthead -->
+<text x="40" y="47" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#E7EBF3">flight-search-eval</text>
+<text x="228" y="47" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#8A93A6">natural language in, a graded flight search out</text>
+<text x="1160" y="47" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" fill="#6E7789">12 graders · OpenAI + Anthropic · en / es</text>
+<line x1="40" y1="68" x2="1160" y2="68" stroke="#1C222E" stroke-width="1"/>
+
+<!-- flow arrows -->
+<path d="M388 239 H408" stroke="#46536B" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M406 233.5 L415 239 L406 244.5 Z" fill="#46536B"/>
+<path d="M776 239 H796" stroke="#46536B" stroke-width="1.6" stroke-linecap="round"/>
+<path d="M794 233.5 L803 239 L794 244.5 Z" fill="#46536B"/>
+
+<!-- ── card A · query ─────────────────────────────────────────── -->
+<rect x="40" y="96" width="340" height="286" rx="12" fill="#12161F" stroke="#222937"/>
+<rect x="40" y="96" width="3.5" height="286" rx="2" fill="#7BA7F7" opacity=".55"/>
+<text x="64" y="130" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" letter-spacing="1.7" fill="#6E7789">QUERY</text>
+<rect x="330" y="117" width="26" height="18" rx="5" fill="#1B2231" stroke="#2A3345"/>
+<text x="343" y="130" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10" fill="#9FB0CE">es</text>
+
+<text x="64" y="180" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" fill="#E7EBF3">ida y vuelta de Chicago</text>
+<text x="64" y="208" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" fill="#E7EBF3">a Tokio el mes que viene</text>
+<text x="64" y="236" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" fill="#E7EBF3">por una semana, 2 adultos</text>
+
+<rect x="64" y="284" width="78" height="22" rx="6" fill="#16202B" stroke="#26364A"/>
+<text x="103" y="299" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#86B4E8">roundtrip</text>
+<rect x="150" y="284" width="98" height="22" rx="6" fill="#16202B" stroke="#26364A"/>
+<text x="199" y="299" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#86B4E8">flexible-date</text>
+
+<text x="64" y="340" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#6E7789">“el mes que viene” is resolved against a</text>
+<text x="64" y="356" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#6E7789">pinned anchor date — 01/01/2026.</text>
+
+<!-- ── card B · structured output ─────────────────────────────── -->
+<rect x="428" y="96" width="340" height="286" rx="12" fill="#12161F" stroke="#222937"/>
+<rect x="428" y="96" width="3.5" height="286" rx="2" fill="#7EE0A2" opacity=".55"/>
+<text x="452" y="130" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" letter-spacing="1.7" fill="#6E7789">SEARCH SPEC</text>
+<rect x="666" y="117" width="78" height="18" rx="5" fill="#1B2231" stroke="#2A3345"/>
+<text x="705" y="130" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="9.5" fill="#9FB0CE">json_schema</text>
+
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5">
+<text x="452" y="168" fill="#6E7789">{</text>
+<text x="467" y="188"><tspan fill="#7BA7F7">"search_type"</tspan><tspan fill="#6E7789">: </tspan><tspan fill="#7EE0A2">"roundtrip"</tspan><tspan fill="#6E7789">,</tspan></text>
+<text x="467" y="208"><tspan fill="#7BA7F7">"trips"</tspan><tspan fill="#6E7789">: [{</tspan></text>
+<text x="482" y="228"><tspan fill="#7BA7F7">"departure"</tspan><tspan fill="#6E7789">: [{ </tspan><tspan fill="#7BA7F7">"code"</tspan><tspan fill="#6E7789">: </tspan><tspan fill="#7EE0A2">"ORD"</tspan><tspan fill="#6E7789"> }],</tspan></text>
+<text x="482" y="248"><tspan fill="#7BA7F7">"arrival"</tspan><tspan fill="#6E7789">: [{ </tspan><tspan fill="#7BA7F7">"code"</tspan><tspan fill="#6E7789">: </tspan><tspan fill="#7EE0A2">"TYO"</tspan><tspan fill="#6E7789"> }],</tspan></text>
+<text x="482" y="268"><tspan fill="#7BA7F7">"departure_date"</tspan><tspan fill="#6E7789">: </tspan><tspan fill="#7EE0A2">"02/14/26"</tspan><tspan fill="#6E7789">,</tspan></text>
+<text x="482" y="288"><tspan fill="#7BA7F7">"duration"</tspan><tspan fill="#6E7789">: </tspan><tspan fill="#7EE0A2">"7"</tspan></text>
+<text x="467" y="308" fill="#6E7789">}],</text>
+<text x="467" y="328"><tspan fill="#7BA7F7">"passengers"</tspan><tspan fill="#6E7789">: { </tspan><tspan fill="#7BA7F7">"adults"</tspan><tspan fill="#6E7789">: </tspan><tspan fill="#F2C14E">2</tspan><tspan fill="#6E7789">, … }</tspan></text>
+<text x="452" y="348" fill="#6E7789">}</text>
+</g>
+
+<!-- ── card C · graders ───────────────────────────────────────── -->
+<rect x="816" y="96" width="344" height="286" rx="12" fill="#12161F" stroke="#222937"/>
+<rect x="816" y="96" width="3.5" height="286" rx="2" fill="#B08CF5" opacity=".55"/>
+<text x="840" y="130" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" letter-spacing="1.7" fill="#6E7789">GRADED · 12 DIMENSIONS</text>
+
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#A9B6CC" text-anchor="middle">
+<rect x="840" y="156" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="174">ACT</text>
+<rect x="942" y="156" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="988" y="174">TYPE</text>
+<rect x="1044" y="156" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="1090" y="174">ORIG</text>
+<rect x="840" y="192" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="210">DEST</text>
+<rect x="942" y="192" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="988" y="210">DATE</text>
+<rect x="1044" y="192" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="1090" y="210">DUR</text>
+<rect x="840" y="228" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="246">PAX</text>
+<rect x="942" y="228" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="988" y="246">CABIN</text>
+<rect x="1044" y="228" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="1090" y="246">FILT</text>
+<rect x="840" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="282">NOINV</text>
+<rect x="942" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="988" y="282">SANE</text>
+<rect x="1044" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="1090" y="282">SHAPE</text>
+</g>
+
+<line x1="840" y1="310" x2="1136" y2="310" stroke="#1C2330"/>
+<text x="840" y="340" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#6E7789">Each dimension is scored on its own, and</text>
+<text x="840" y="356" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#6E7789">a case passes only when every dimension</text>
+<text x="840" y="372" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="11.5" fill="#6E7789">it asserts passes.</text>
+</svg>

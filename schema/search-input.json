@@ -159,7 +159,7 @@
                                                             "type": "string",
                                                             "minLength": 1,
                                                             "maxLength": 100,
-                                                            "description": "Location name. Preserve custom or vague names; use \"n/a\" when unavailable."
+                                                            "description": "Location name. Preserve custom or vague names with no specific IATA code; use \"n/a\" when unavailable."
                                                         },
                                                         "code": {
                                                             "type": "string",
@@ -182,7 +182,7 @@
                                                             "type": "string",
                                                             "minLength": 1,
                                                             "maxLength": 100,
-                                                            "description": "Location name. Preserve custom or vague names; use \"n/a\" when unavailable."
+                                                            "description": "Location name. Preserve custom or vague names with no specific IATA code; use \"n/a\" when unavailable."
                                                         },
                                                         "code": {
                                                             "type": "string",

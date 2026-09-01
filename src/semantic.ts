@@ -22,17 +22,29 @@ function cosineSimilarity(a: number[], b: number[]): number {
     return dot / (magA * magB);
 }
 
-/** Embeds both names and reports whether they clear the configured threshold. */
-export async function isSimilar(expected: string, actual: string, config: GradingConfig): Promise<boolean> {
-    if (expected === actual) {
-        return true;
-    }
+/** Case and surrounding whitespace do not distinguish two place names. */
+export const normalize = (name: string) => name.trim().toLowerCase();
+
+/**
+ * Similarity of every expected name against every actual name, indexed
+ * [expected][actual]. Both lists ride in one request, so the caller pays for
+ * one round trip however many pairs it goes on to compare.
+ */
+export async function scoreNames(
+    expected: string[],
+    actual: string[],
+    config: GradingConfig,
+): Promise<number[][]> {
     const result = await getClient().embeddings.create({
         model: config.embedding_model,
-        input: [expected, actual],
+        input: [...expected, ...actual].map(normalize),
     });
 
-    const score = cosineSimilarity(result.data[0]!.embedding, result.data[1]!.embedding);
-    console.log(`expected:${expected} ; model output: ${actual}; cosineSimilarity:${score} `);
-    return score >= config.similarity_threshold;
+    // The API documents `data` as input order; `index` is what actually says so.
+    const vectors = [...result.data].sort((a, b) => a.index - b.index).map((entry) => entry.embedding);
+    const actualVectors = vectors.slice(expected.length);
+
+    return vectors
+        .slice(0, expected.length)
+        .map((expectedVector) => actualVectors.map((v) => cosineSimilarity(expectedVector, v)));
 }

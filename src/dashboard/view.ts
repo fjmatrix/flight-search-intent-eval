@@ -65,13 +65,24 @@ const casePassed = (c: ResultCase) => c.runs.length > 0 && c.runs.every((r) => r
 const resultOf = (r: RunRecord) => (r.actual as { result?: ParsedResult } | null)?.result
 
 /**
- * Cached input bills at the read rate and is already inside `input`; reasoning
- * bills as output and is already inside `output`. Nothing reports cache writes
- * yet, so `cache_write` goes unused until a provider that charges for it lands.
+ * Cached and written input bill at the read and write rates and are both already
+ * inside `input`; reasoning bills as output and is already inside `output`.
  */
-function costOf(sum: { input: number; output: number; cached: number }, p: Pricing | null) {
+function costOf(
+  sum: { input: number; output: number; cached: number; written: number },
+  p: Pricing | null,
+) {
   if (!p) return null
-  return ((sum.input - sum.cached) * p.input + sum.cached * p.cache_read + sum.output * p.output) / 1e6
+  // `input` holds all three input terms; the other two are subtracted back out
+  // so each is priced once, at its own rate.
+  const plain = sum.input - sum.cached - sum.written
+  return (
+    (plain * p.input +
+      sum.cached * p.cache_read +
+      sum.written * p.cache_write +
+      sum.output * p.output) /
+    1e6
+  )
 }
 
 function median(ns: number[]): number {
@@ -111,7 +122,7 @@ export function build(files: ResultsFile[]): ViewData {
   for (const file of files) {
     // Dimensions count per repeat, the same denominator run.ts prints.
     const dims: Record<string, Tally> = Object.fromEntries(graders.map((g) => [g, { passed: 0, of: 0 }]))
-    const sum = { input: 0, output: 0, reasoning: 0, cached: 0 }
+    const sum = { input: 0, output: 0, reasoning: 0, cached: 0, written: 0 }
     let errors = 0
     let tokens = 0
     let calls = 0
@@ -125,6 +136,8 @@ export function build(files: ResultsFile[]): ViewData {
         sum.output += run.usage.output
         sum.reasoning += run.usage.reasoning ?? 0
         sum.cached += run.usage.cached
+        // Runs recorded before this field existed carry no cache-write term.
+        sum.written += run.usage.written ?? 0
         latencies.push(run.latency_ms)
         if (!run.grades) {
           errors++
