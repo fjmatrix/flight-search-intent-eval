@@ -2,6 +2,15 @@
  *  data; the leaderboard is written as markup because nothing filters it. */
 
 import type { ModelView, ViewData } from './view.ts'
+import TAGS from './tags.json' with { type: 'json' }
+
+interface TagCopy {
+  definition: string
+  examples?: string[]
+  grading?: string
+  /** Explained under the subtitle. The self-evident tags carry no entry on the page. */
+  onPage?: boolean
+}
 
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
@@ -9,16 +18,32 @@ const esc = (s: string) =>
 /** Escaping `<` is what keeps a `</script>` inside model output from ending the tag. */
 const embed = (data: unknown) => JSON.stringify(data).replace(/</g, '\\u003c')
 
+/** Spelled out for the subtitle; a count past the list falls back to digits. */
+const NUMBER = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine',
+  'ten', 'eleven', 'twelve']
+const spell = (n: number) => NUMBER[n] ?? String(n)
+
 const pct = (t: { passed: number; of: number }) => (t.of ? t.passed / t.of : 0)
 const status = (rate: number) =>
   rate >= 0.95 ? 'var(--good)' : rate >= 0.8 ? 'var(--warning)' : rate >= 0.5 ? 'var(--serious)' : 'var(--critical)'
 
-const SHORT: Record<string, string> = {
-  gradeAction: 'ACT', gradeSearchType: 'TYPE', gradeOrigin: 'ORIG', gradeDestination: 'DEST',
-  gradeDateRange: 'DATE', gradeDuration: 'DUR', gradePassengers: 'PAX', gradeCabin: 'CABIN',
-  gradeFilters: 'FILT', gradeNoInventedParams: 'NOINV', gradeDateSanity: 'SANE', gradeTripShape: 'SHAPE',
+/** What each dimension is called on the page, and what it looks at. */
+const DIMENSION: Record<string, { name: string; note: string }> = {
+  gradeAction: { name: 'action', note: 'search the query or reject it' },
+  gradeSearchType: { name: 'search type', note: 'oneway · roundtrip · multi' },
+  gradeOrigin: { name: 'origin', note: 'departure locations' },
+  gradeDestination: { name: 'destination', note: 'arrival locations' },
+  gradeDateRange: { name: 'travel dates', note: 'departure and return' },
+  gradeDuration: { name: 'stay length', note: 'nights' },
+  gradePassengers: { name: 'passengers', note: 'adults, children, infants' },
+  gradeCabin: { name: 'cabin', note: 'cabin class' },
+  gradeFilters: { name: 'filters', note: 'stops, price, bags, connections' },
+  gradeDateSanity: { name: 'date validity', note: 'no past or out-of-order dates' },
+  gradeTripShape: { name: 'trip shape', note: 'leg count, return xor duration' },
 }
-const short = (g: string) => SHORT[g] ?? g.replace(/^grade/, '').toUpperCase()
+/** A grader with no entry above is shown as its name, spaced out: gradeFooBar → foo bar. */
+const label = (g: string) =>
+  DIMENSION[g]?.name ?? g.replace(/^grade/, '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase()
 
 function leaderboardRow(m: ModelView, i: number, v: ViewData, maxScored: number): string {
   const strip = v.graders
@@ -27,7 +52,8 @@ function leaderboardRow(m: ModelView, i: number, v: ViewData, maxScored: number)
       if (!d.of) return '<i class="sc na" style="--w:8px"></i>'
       const w = (4 + 9 * Math.sqrt(d.of / maxScored)).toFixed(1)
       const h = (4 + 18 * pct(d)).toFixed(1)
-      return `<i class="sc" style="--w:${w}px;--h:${h}px;--c:${status(pct(d))}" data-tip="${esc(g)}\n${d.passed}/${d.of} passed · scored on ${d.of} of ${v.calls / v.models.length} calls"></i>`
+      const tip = [label(g), DIMENSION[g]?.note].filter(Boolean).join(' — ')
+      return `<i class="sc" style="--w:${w}px;--h:${h}px;--c:${status(pct(d))}" data-tip="${esc(tip)}\n${d.passed}/${d.of} passed · scored on ${d.of} of ${v.calls / v.models.length} calls"></i>`
     })
     .join('')
 
@@ -49,10 +75,10 @@ function leaderboardRow(m: ModelView, i: number, v: ViewData, maxScored: number)
   const dims = v.graders
     .map((g) => {
       const d = m.dims[g]!
-      return `<tr><td class="gname">${esc(g)}</td>
-        <td class="frac" style="color:${d.of ? status(pct(d)) : 'var(--ink3)'}">${d.of ? `${d.passed}/${d.of}` : '—'}</td>
-        <td class="cov"><span class="cov-bar"><i style="width:${d.of ? (d.of / (v.calls / v.models.length)) * 100 : 0}%"></i></span></td>
-        <td class="cov-txt">${d.of ? `${d.of} scored` : 'never scored'}</td></tr>`
+      const note = DIMENSION[g]?.note
+      // The fraction's denominator is the scored count, so no column repeats it.
+      return `<tr><td class="gname">${esc(label(g))}${note ? ` <em>${esc(note)}</em>` : ''}</td>
+        <td class="frac" style="width:auto;color:${d.of ? status(pct(d)) : 'var(--ink3)'}">${d.of ? `${d.passed}/${d.of}` : 'never scored'}</td></tr>`
     })
     .join('')
   const langs = v.langs
@@ -67,7 +93,7 @@ function leaderboardRow(m: ModelView, i: number, v: ViewData, maxScored: number)
 
   return `<tr class="row" tabindex="0" role="button" aria-expanded="false">
     <td class="rank">${i + 1}</td>
-    <td class="mdl"><b>${esc(m.model)}</b><span>${esc([m.prompt, m.effort].filter(Boolean).join(' · '))}</span></td>
+    <td class="mdl"><b>${esc(m.model)}</b>${m.effort ? `<span>${esc(m.effort)}</span>` : ''}</td>
     <td><div class="rate">
       <span class="pct">${(rate * 100).toFixed(0)}%</span>
       <span class="of">${m.passed}/${v.total}</span>
@@ -78,7 +104,7 @@ function leaderboardRow(m: ModelView, i: number, v: ViewData, maxScored: number)
     <td class="num" style="border-left:2px solid var(--rule2)${m.errors ? ';color:var(--warning);font-weight:600' : ''}">${m.errors || '—'}</td>
     <td class="chev"><i>▸</i></td>
   </tr>
-  <tr class="panel" hidden><td colspan="${5 + v.tags.length}"><div class="panel-in">
+  <tr class="panel" hidden><td colspan="${6 + v.tags.length}"><div class="panel-in">
     <div><h3>Per-dimension <em>pass rate over the repeats that scored it</em></h3>
       <table class="dims">${dims}</table></div>
     <div><h3>Cost &amp; latency</h3>
@@ -94,9 +120,30 @@ function leaderboardRow(m: ModelView, i: number, v: ViewData, maxScored: number)
   </div></td></tr>`
 }
 
+/**
+ * The tags whose column headers do not speak for themselves, defined before the
+ * reader meets them. A tag the run never used is left out.
+ */
+function tagIntro(v: ViewData): string {
+  const rows = v.tags
+    .map((t) => [t, (TAGS as Record<string, TagCopy>)[t]] as const)
+    .filter(([, copy]) => copy?.onPage)
+    .map(([t, copy]) => {
+      const examples = (copy!.examples ?? []).map((e) => `<i>“${esc(e)}”</i>`).join(', ')
+      return `<dt>${esc(t)}</dt><dd>${esc(copy!.definition)}${examples ? `: ${examples}` : ''}.${
+        copy!.grading ? ` <em>${esc(copy!.grading)}</em>` : ''
+      }</dd>`
+    })
+    .join('')
+  if (!rows) return ''
+  return `<div class="tags">
+    <p>Tags bucket the cases; each is scored on its own.</p>
+    <dl>${rows}</dl></div>`
+}
+
 export function page(v: ViewData): string {
   const maxScored = Math.max(1, ...v.models.flatMap((m) => v.graders.map((g) => m.dims[g]!.of)))
-  const short_ = Object.fromEntries(v.graders.map((g) => [g, short(g)]))
+  const labels = Object.fromEntries(v.graders.map((g) => [g, label(g)]))
 
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -109,26 +156,27 @@ export function page(v: ViewData): string {
 <div id="tip"></div>
 <div class="wrap">
 <header class="mast">
-  <div class="mast-top">
-    <div><h1>Flight Search Eval</h1>
-      <div class="sub">Natural-language flight queries parsed into <span class="mono">AiSearchInput</span>, graded on ${v.graders.length} independent dimensions.</div></div>
-    <div class="runid">run <b>${esc(v.runId)}</b><br>anchor date <b>${esc(v.today)}</b></div>
-  </div>
+  <h1>Flight Search Eval</h1>
+  <div class="sub">A benchmark for flight-search intent parsing. Real-world queries in three
+    languages — deduped, de-identified, hand-labeled — put to every model on the same terms;
+    ${spell(v.graders.length)} independent graders decide whether each one caught the traveler's intent.</div>
+  ${tagIntro(v)}
 </header>
 
 <dl class="meta">
+  <div><dt>Run</dt><dd>${esc(v.runId)}</dd></div>
+  <div><dt>Anchor date</dt><dd>${esc(v.today)}</dd></div>
   <div><dt>Cases</dt><dd>${v.total}</dd></div>
   <div><dt>Languages</dt><dd>${v.langs.map(esc).join(' · ')}</dd></div>
   <div><dt>Prompt</dt><dd>${esc(v.prompt)}</dd></div>
   <div><dt>Repeats</dt><dd>${v.repeats}</dd></div>
   <div><dt>Models</dt><dd>${v.models.length}</dd></div>
   <div><dt>Calls</dt><dd>${v.calls.toLocaleString()}</dd></div>
-  <div><dt>Similarity</dt><dd>${v.grading.similarity_threshold} · ${esc(v.grading.embedding_model)}</dd></div>
+  <div><dt>Fuzzy text similarity</dt><dd>cosine · threshold ≥ ${v.grading.similarity_threshold} · ${esc(v.grading.embedding_model)}</dd></div>
 </dl>
 
 <section>
-  <div class="sec-head"><h2>Leaderboard</h2>
-    <div class="sec-note">In the dimension strip, bar height is pass rate and bar width is how many repeats scored it. A narrow bar is a thin result, however tall it stands.</div></div>
+  <h2>Leaderboard</h2>
   <div class="scroll"><table class="lb">
     <thead><tr><th></th><th>Model</th><th>Cases passed</th><th style="min-width:196px">Dimensions</th>
       ${v.tags.map((t, i) => `<th class="tg${i === 0 ? ' first' : ''}">${esc(t)}</th>`).join('')}
@@ -147,8 +195,7 @@ export function page(v: ViewData): string {
 </section>
 
 <section>
-  <div class="sec-head"><h2>Failed cases</h2>
-    <div class="sec-note">Every case a model did not pass on all ${v.repeats} repeats. Each missed grader shows what the case asserted beside what the model returned.</div></div>
+  <h2>Failed cases by tags</h2>
   <div class="controls">
     <span class="lbl">Language</span>
     <div class="grp" id="f-lang">
@@ -171,11 +218,15 @@ export function page(v: ViewData): string {
 </div>
 
 <script type="application/json" id="data">${embed({
-    models: v.models.map((m) => ({ model: m.model, id: [m.prompt, m.effort].filter(Boolean).join(' · ') })),
+    models: v.models.map((m) => ({
+      key: m.key,
+      model: m.model,
+      id: m.effort ?? '',
+    })),
     fails: v.fails,
     total: v.total,
     countByLang: v.countByLang,
-    short: short_,
+    labels,
   })}</script>
 <script>${CLIENT}</script>
 </body></html>`
@@ -200,20 +251,23 @@ h1,h2,h3{font-family:var(--f-disp);text-wrap:balance;margin:0}
 .mono{font-family:var(--f-mono)}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 header.mast{padding:34px 0 18px;border-bottom:2px solid var(--ink)}
-.mast-top{display:flex;justify-content:space-between;align-items:flex-end;gap:24px;flex-wrap:wrap}
 h1{font-size:31px;font-weight:800;letter-spacing:-.022em;line-height:1.05}
-.sub{color:var(--ink2);font-size:13.5px;margin-top:6px;max-width:62ch}
-.runid{font-family:var(--f-mono);font-size:11.5px;color:var(--ink3);text-align:right;line-height:1.7}
-.runid b{color:var(--ink);font-weight:500}
+.sub{color:var(--ink2);font-size:15px;line-height:1.55;margin-top:9px}
+.tags{margin-top:18px}
+.tags p{margin:0 0 9px;color:var(--ink3);font-size:14px}
+.tags dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 16px}
+.tags dt{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+color:var(--ink2);white-space:nowrap;padding-top:3px}
+.tags dd{margin:0;color:var(--ink2);font-size:14px;line-height:1.55}
+.tags dd i{font-style:normal;font-family:var(--f-mono);font-size:13px;color:var(--ink)}
+.tags dd em{font-style:normal;color:var(--ink3)}
 .meta{display:flex;flex-wrap:wrap;margin:0;border-bottom:1px solid var(--rule)}
 .meta div{padding:11px 20px 11px 0;margin-right:20px;border-right:1px solid var(--rule);display:flex;flex-direction:column;gap:2px}
 .meta div:last-child{border-right:0}
 .meta dt{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);font-weight:500}
 .meta dd{margin:0;font-family:var(--f-mono);font-size:13px;font-weight:500}
 section{margin-top:46px}
-.sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:20px;flex-wrap:wrap;margin-bottom:4px}
-h2{font-size:12px;font-weight:700;letter-spacing:.13em;text-transform:uppercase}
-.sec-note{color:var(--ink3);font-size:12.5px;max-width:58ch}
+h2{font-size:22px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;margin-bottom:12px}
 .scroll{overflow-x:auto;border-bottom:1px solid var(--rule)}
 table{border-collapse:collapse;width:100%;font-size:13px}
 thead th{font-size:10px;letter-spacing:.08em;text-transform:uppercase;font-weight:600;color:var(--ink3);
@@ -227,9 +281,10 @@ tbody tr.row{cursor:pointer;background:var(--card)}
 tbody tr.row:hover{background:var(--accent-soft)}
 .lb tbody tr.row td{height:64px}
 .rank{font-family:var(--f-mono);font-size:12px;color:var(--ink3);width:34px}
-.mdl{min-width:180px}
+/* Nowrap keeps the effort beside the name; a long name widens the column instead of wrapping. */
+.mdl{min-width:180px;white-space:nowrap}
 .mdl b{font-family:var(--f-mono);font-size:13.5px;font-weight:600}
-.mdl span{display:block;font-family:var(--f-mono);font-size:10.5px;color:var(--ink3);margin-top:2px}
+.mdl span{font-family:var(--f-mono);font-size:10.5px;color:var(--ink3);margin-left:7px}
 .rate{display:flex;align-items:center;gap:9px;min-width:158px}
 .rate .pct{font-family:var(--f-disp);font-size:19px;font-weight:700;width:50px;text-align:right;font-variant-numeric:tabular-nums}
 .rate .of{font-family:var(--f-mono);font-size:11px;color:var(--ink3);white-space:nowrap}
@@ -251,7 +306,7 @@ tr.row[aria-expanded="true"] .chev{color:var(--accent)}
 tr.row .chev i{display:inline-block;transition:transform .12s ease;font-style:normal}
 tr.row[aria-expanded="true"] .chev i{transform:rotate(90deg)}
 tr.panel>td{padding:0;border-bottom:2px solid var(--rule2);background:var(--sunk)}
-.panel-in{padding:20px 22px 24px;display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:34px}
+.panel-in{padding:20px 22px 24px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:34px}
 .panel-in.wide{display:block}
 @media (max-width:920px){.panel-in{grid-template-columns:1fr;gap:24px}}
 .panel-in h3{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-weight:600;
@@ -293,10 +348,11 @@ padding:7px 14px 7px 0;border-bottom:1px solid var(--rule2);font-weight:600}
 .qt{font-size:12px;min-width:20ch;max-width:28ch}
 .chips{display:flex;gap:4px;flex-wrap:wrap;max-width:16ch}
 .chips span{font-family:var(--f-mono);font-size:9.5px;padding:1px 5px;border:1px solid var(--rule2);color:var(--ink2);white-space:nowrap}
-.diff{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:7px 10px;align-items:baseline;min-width:44ch}
-.gtag{font-family:var(--f-mono);font-size:10px;padding:1px 5px;border:1px solid var(--critical);color:var(--critical);
-white-space:nowrap;justify-self:start}
-.gtag.err{border-color:var(--warning);color:var(--warning)}
+/* Fixed side tracks and one shared gap: the header sits in the same grid as every row below it. */
+.diff{display:grid;grid-template-columns:96px minmax(0,1fr) 12px minmax(0,1fr);gap:7px 12px;align-items:baseline;min-width:52ch}
+.dhead{min-width:0}
+.gtag{font-family:var(--f-mono);font-size:10.5px;color:var(--critical);line-height:1.5}
+.gtag.err{color:var(--warning)}
 .diff .exp{font-family:var(--f-mono);font-size:11px;color:var(--ink2);line-height:1.5}
 .diff .arw{color:var(--ink3);font-size:11px}
 .diff .got{font-family:var(--f-mono);font-size:11px;color:var(--critical);line-height:1.5}
@@ -335,7 +391,9 @@ function render() {
 
   document.getElementById('fl-body').innerHTML = D.models.map((m, i) => {
     const model = m.model
-    const rows = D.fails.filter(f => f.model === model && (lang === 'all' || f.lang === lang))
+    // Keyed by the results file, not the model name: one run holds the same
+    // model at several efforts, and each row shows only its own failures.
+    const rows = D.fails.filter(f => f.key === m.key && (lang === 'all' || f.lang === lang))
       .sort((a, b) => (a.errored - b.errored) || (b.missed.length - a.missed.length))
     const errN = rows.filter(f => f.errored).length
     const share = total ? rows.length / total : 0
@@ -346,7 +404,7 @@ function render() {
       || '<span style="border:0;padding-left:0">—</span>'
     return '<tr class="row" tabindex="0" role="button" aria-expanded="false">' +
       '<td class="rank">' + (i + 1) + '</td>' +
-      '<td class="mdl"><b>' + esc(model) + '</b><span>' + esc(m.id) + '</span></td>' +
+      '<td class="mdl"><b>' + esc(model) + '</b>' + (m.id ? '<span>' + esc(m.id) + '</span>' : '') + '</td>' +
       '<td><div class="failcount"><span class="n" style="color:' + status(1 - share) + '">' + rows.length + '</span>' +
       '<span class="of">of ' + total + '</span>' +
       '<span class="bar"><i style="width:' + (share * 100).toFixed(1) + '%;background:' + status(1 - share) + '"></i></span></div></td>' +
@@ -362,7 +420,7 @@ function panel(rows) {
   const body = rows.map((f, i) => {
     const diff = (f.errored ? '<span class="gtag err">error</span><span class="full">a call produced no grades</span>' : '') +
       f.missed.map(m =>
-        '<span class="gtag">' + esc(D.short[m.grader] || m.grader) + ' ' + m.passed + '/' + m.of + '</span>' +
+        '<span class="gtag">' + esc(D.labels[m.grader] || m.grader) + '</span>' +
         '<span class="exp">' + esc(m.exp) + '</span><span class="arw">→</span>' +
         '<span class="got">' + esc(m.got) + '</span>').join('')
     return '<tr class="' + (i >= CAP ? 'extra' : '') + '">' +
@@ -372,7 +430,9 @@ function panel(rows) {
       '<td><div class="diff">' + diff + '</div></td></tr>'
   }).join('')
   return '<div class="faillist"><table class="fails">' +
-    '<thead><tr><th>Case</th><th>Query</th><th>Tags</th><th>Missed · expected → returned</th></tr></thead>' +
+    '<thead><tr><th>Case</th><th>Query</th><th>Tags</th>' +
+    '<th><div class="diff dhead"><span>Missed</span><span>Expected</span><span></span><span>Returned</span></div></th>' +
+    '</tr></thead>' +
     '<tbody>' + body + '</tbody></table>' +
     (rows.length > CAP ? '<button class="showall">show all ' + rows.length + ' failed cases</button>' : '') + '</div>'
 }

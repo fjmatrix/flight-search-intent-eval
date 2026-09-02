@@ -1,0 +1,3 @@
+{"id": "mc-uk-thailand-vietnam", "lang": "en", "text": "3 week trip UK to thailand and then back from vietnam", "tags": ["multi", "fuzzy-location"], "expect": {"action": "get_tickets", "search_type": "multi", "trips": [{"departure": {"fuzzy": true, "names": ["the United Kingdom", "UK", "Britain"]}, "arrival": {"fuzzy": true, "names": ["Thailand"]}, "duration": "21"}, {"departure": {"fuzzy": true, "names": ["Vietnam"]}, "arrival": {"fuzzy": true, "names": ["the United Kingdom", "UK", "Britain"]}}]}}
+
+    

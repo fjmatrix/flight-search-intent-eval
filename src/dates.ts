@@ -19,3 +19,10 @@ export function toRange(value: string): [number, number] {
   const [from, to = from] = value.split('-')
   return [toDay(from ?? ''), toDay(to ?? '')]
 }
+
+/** A day number back to 'MM/DD/YY'. The inverse of toDay's two-digit form. */
+export function toDate(day: number): string {
+  const date = new Date(day * MS_PER_DAY)
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${pad(date.getUTCMonth() + 1)}/${pad(date.getUTCDate())}/${pad(date.getUTCFullYear() % 100)}`
+}

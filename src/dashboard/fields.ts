@@ -19,17 +19,8 @@ export interface Slice {
   got: string
 }
 
-/** Shared by both sides of Expect and AiSearchInput. */
-const NULLABLE = [
-  'passengers',
-  'cabins',
-  'max_stops',
-  'max_price',
-  'flight_duration',
-  'connecting_airports',
-  'bags',
-] as const
-const FILTER_KEYS = ['max_stops', 'max_price', 'flight_duration', 'connecting_airports', 'bags'] as const
+/** The filters the FILT slice lists, named the same in Expect and AiSearchInput. */
+const FILTER_KEYS = ['max_stops', 'max_price', 'flight_duration', 'bags'] as const
 
 const NONE = '—'
 const join = (parts: (string | null | undefined)[], sep = ' · ') =>
@@ -48,8 +39,15 @@ const value = (v: unknown): string =>
       ? Object.entries(v).map(([k, n]) => `${k} ${n}`).join(' ')
       : String(v)
 
-const expectLoc = (e: LocationExpect | undefined): string =>
-  !e ? NONE : e.fuzzy ? (e.names ?? []).map((n) => `≈ "${n}"`).join(' + ') : (e.any_code ?? []).join(' | ')
+/**
+ * A results file keeps the `expect` its run was graded against, so an older one
+ * can hold a shape this build no longer writes. Show that raw rather than blank.
+ */
+const expectLoc = (e: LocationExpect | undefined): string => {
+  if (!e) return NONE
+  if (e.fuzzy) return (e.names ?? []).map((n) => `≈ "${n}"`).join(' | ') || JSON.stringify(e)
+  return (e.any_code ?? []).join(' | ') || JSON.stringify(e)
+}
 
 /** A code when the model resolved one, the raw name when it answered 'n/a'. */
 const actualLoc = (ls: AiSearchLocation[] | undefined): string =>
@@ -72,8 +70,15 @@ const passengers = (p: AiSearchInput['passengers'] | undefined) =>
         ', ',
       )
 
-const filters = (x: Expect | AiSearchInput) =>
-  join(FILTER_KEYS.map((k) => (x[k] == null ? null : `${k}: ${value(x[k])}`)))
+/** `connections` is already formatted, because each side writes locations its own way. */
+const filters = (x: Expect | AiSearchInput, connections: string | null) =>
+  join([...FILTER_KEYS.map((k) => (x[k] == null ? null : `${k}: ${value(x[k])}`)), connections])
+
+const expectConnections = (e: Expect) =>
+  e.connecting_airports ? `connecting_airports: ${expectLoc(e.connecting_airports)}` : null
+
+const actualConnections = (p: AiSearchInput) =>
+  p.connecting_airports ? `connecting_airports: ${actualLoc(p.connecting_airports)}` : null
 
 export const FIELDS: Record<
   string,
@@ -109,8 +114,12 @@ export const FIELDS: Record<
     const p = paramsOf(r)
     return {
       exp: expectTrips(e, (t) => join([t.departure_date, t.return_date && `return ${t.return_date}`])),
+      // 'null' rather than NONE on the returned side: the case asserting nothing
+      // and the model answering nothing are different facts and read alike as '—'.
       got: p
-        ? actualTrips(p, (t) => join([t.departure_date, t.return_date && `return ${t.return_date}`]))
+        ? actualTrips(p, (t) =>
+            join([t.departure_date ?? 'null', t.return_date && `return ${t.return_date}`]),
+          )
         : noParams(r),
     }
   },
@@ -138,16 +147,9 @@ export const FIELDS: Record<
 
   gradeFilters: (e, r) => {
     const p = paramsOf(r)
-    return { exp: filters(e), got: p ? filters(p) : noParams(r) }
-  },
-
-  gradeNoInventedParams: (e, r) => {
-    const p = paramsOf(r)
-    const unasserted = NULLABLE.filter((k) => e[k] === undefined)
-    const invented = p && join(unasserted.map((k) => (p[k] == null ? null : `${k}: ${value(p[k])}`)))
     return {
-      exp: `null for ${unasserted.length} unasserted field${unasserted.length === 1 ? '' : 's'}`,
-      got: !p ? noParams(r) : invented === NONE ? 'all null' : invented!,
+      exp: filters(e, expectConnections(e)),
+      got: p ? filters(p, actualConnections(p)) : noParams(r),
     }
   },
 

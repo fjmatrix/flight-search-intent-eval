@@ -1,0 +1,32 @@
+{
+    "oneway": {
+        "definition": "No return. Nothing in the user query indicates a return_date or a duration."
+    },
+    "roundtrip": {
+        "definition": "Out and back. The return is stated as either a date/date range or a length/duration, never both."
+    },
+    "multi": {
+        "definition": "Two or more trips, each with its own departure date, in ascending order."
+    },
+    "fuzzy-location": {
+        "definition": "Places with no IATA code",
+        "examples": ["beach towns in Southeast Asia", "West Europe"],
+        "grading": "evaluated against golden sets by meaning (cosine similarity).",
+        "onPage": true
+    },
+    "flexible-date": {
+        "definition": "a window rather than a day",
+        "examples": ["October or November", "next 10 to 15 days"],
+        "grading": "Any date inside the window passes.",
+        "onPage": true
+    },
+    "invalid-off-topic": {
+        "definition": "Not about flights at all."
+    },
+    "invalid-date": {
+        "definition": "A flight query whose date cannot be honored — already past, or no such day."
+    },
+    "invalid-others": {
+        "definition": "Reads as a flight query but cannot become a search, for a reason no other invalid tag names."
+    }
+}

@@ -4,15 +4,19 @@
  */
 
 import OpenAI from 'openai';
+import { withRetry } from './providers/retry.ts';
 
 export interface GradingConfig {
     embedding_model: string;
     similarity_threshold: number;
 }
 
+/** The same budget the adapters use; a rate-limited embedding fails the same way. */
+const MAX_ATTEMPTS = 4;
+
 /** Lazy so the SDK's missing-key throw happens at call time, not at import. */
 let client: OpenAI | undefined;
-const getClient = () => (client ??= new OpenAI());
+const getClient = () => (client ??= new OpenAI({ maxRetries: 0 }));
 
 function cosineSimilarity(a: number[], b: number[]): number {
     const dot = a.reduce((sum, x, i) => sum + x * b[i]!, 0);
@@ -35,10 +39,12 @@ export async function scoreNames(
     actual: string[],
     config: GradingConfig,
 ): Promise<number[][]> {
-    const result = await getClient().embeddings.create({
-        model: config.embedding_model,
-        input: [...expected, ...actual].map(normalize),
-    });
+    const { value: result } = await withRetry(MAX_ATTEMPTS, () =>
+        getClient().embeddings.create({
+            model: config.embedding_model,
+            input: [...expected, ...actual].map(normalize),
+        }),
+    );
 
     // The API documents `data` as input order; `index` is what actually says so.
     const vectors = [...result.data].sort((a, b) => a.index - b.index).map((entry) => entry.embedding);

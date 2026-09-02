@@ -1,13 +1,13 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 420" width="1200" height="420" role="img" aria-labelledby="t d">
 <title id="t">flight-search-eval</title>
-<desc id="d">A Spanish natural-language flight query becomes a structured search specification, which is then scored on twelve independent grading dimensions.</desc>
+<desc id="d">A Spanish natural-language flight query becomes a structured search specification, which is then scored on eleven independent grading dimensions.</desc>
 
 <rect width="1200" height="420" rx="16" fill="#0B0E13"/>
 
 <!-- masthead -->
 <text x="40" y="47" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="15" font-weight="700" fill="#E7EBF3">flight-search-eval</text>
 <text x="228" y="47" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Helvetica,Arial,sans-serif" font-size="13" fill="#8A93A6">natural language in, a graded flight search out</text>
-<text x="1160" y="47" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" fill="#6E7789">12 graders · OpenAI + Anthropic · en / es</text>
+<text x="1160" y="47" text-anchor="end" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="11.5" fill="#6E7789">11 graders · OpenAI + Anthropic · en / es</text>
 <line x1="40" y1="68" x2="1160" y2="68" stroke="#1C222E" stroke-width="1"/>
 
 <!-- flow arrows -->
@@ -58,7 +58,7 @@
 <!-- ── card C · graders ───────────────────────────────────────── -->
 <rect x="816" y="96" width="344" height="286" rx="12" fill="#12161F" stroke="#222937"/>
 <rect x="816" y="96" width="3.5" height="286" rx="2" fill="#B08CF5" opacity=".55"/>
-<text x="840" y="130" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" letter-spacing="1.7" fill="#6E7789">GRADED · 12 DIMENSIONS</text>
+<text x="840" y="130" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" letter-spacing="1.7" fill="#6E7789">GRADED · 11 DIMENSIONS</text>
 
 <g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="10.5" fill="#A9B6CC" text-anchor="middle">
 <rect x="840" y="156" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="174">ACT</text>
@@ -70,9 +70,8 @@
 <rect x="840" y="228" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="246">PAX</text>
 <rect x="942" y="228" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="988" y="246">CABIN</text>
 <rect x="1044" y="228" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="1090" y="246">FILT</text>
-<rect x="840" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="282">NOINV</text>
-<rect x="942" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="988" y="282">SANE</text>
-<rect x="1044" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="1090" y="282">SHAPE</text>
+<rect x="840" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="886" y="282">SANE</text>
+<rect x="942" y="264" width="92" height="28" rx="7" fill="#171E2A" stroke="#263043"/><text x="988" y="282">SHAPE</text>
 </g>
 
 <line x1="840" y1="310" x2="1136" y2="310" stroke="#1C2330"/>

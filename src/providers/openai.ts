@@ -6,13 +6,18 @@ import {
   type Provider,
   type TokenUsage,
 } from './types.ts'
-// import { withRetry } from './retry.ts'
-// Parked, not deleted: wrap the responses.create call in withRetry when rate
-// limits start showing up as errors. Until then it is machinery with no job.
+import { errorMessage, RetryError, withRetry } from './retry.ts'
 
-/** Lazy so the SDK's missing-key throw happens at call time, not at import. */
+/** One call plus three retries. Past that a 429 is a rate limit to run under, not to wait out. */
+const MAX_ATTEMPTS = 4
+
+/**
+ * Lazy so the SDK's missing-key throw happens at call time, not at import.
+ * maxRetries: 0 hands retrying to withRetry, so the count a run reports is the
+ * whole story of what the call cost.
+ */
 let client: OpenAI | undefined
-const getClient = () => (client ??= new OpenAI())
+const getClient = () => (client ??= new OpenAI({ maxRetries: 0 }))
 
 function readUsage(usage: OpenAI.Responses.ResponseUsage | undefined): TokenUsage {
   if (!usage) return NO_USAGE
@@ -32,24 +37,26 @@ export const openai: Provider = {
   async call(req: ModelRequest): Promise<ModelResponse> {
     const started = Date.now()
     try {
-      const response = await getClient().responses.create({
-        model: req.model,
-        instructions: req.system,
-        input: req.user,
-        max_output_tokens: req.maxTokens,
-        text: {
-          format: {
-            type: 'json_schema',
-            name: 'flight_search_result',
-            strict: true,
-            schema: req.schema,
+      const { value: response, attempts } = await withRetry(MAX_ATTEMPTS, () =>
+        getClient().responses.create({
+          model: req.model,
+          instructions: req.system,
+          input: req.user,
+          max_output_tokens: req.maxTokens,
+          text: {
+            format: {
+              type: 'json_schema',
+              name: 'flight_search_result',
+              strict: true,
+              schema: req.schema,
+            },
           },
-        },
-        ...(req.effort ? { reasoning: { effort: req.effort as OpenAI.ReasoningEffort } } : {}),
-        ...req.params,
-      })
+          ...(req.effort ? { reasoning: { effort: req.effort as OpenAI.ReasoningEffort } } : {}),
+          ...req.params,
+        }),
+      )
 
-      const base = { usage: readUsage(response.usage), latency_ms: Date.now() - started }
+      const base = { usage: readUsage(response.usage), attempts, latency_ms: Date.now() - started }
 
       if (response.status === 'incomplete') {
         const reason = response.incomplete_details?.reason ?? 'unknown'
@@ -69,7 +76,9 @@ export const openai: Provider = {
       return {
         output: null,
         status: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
+        // A throw from outside withRetry — parsing the response — took one call.
+        attempts: error instanceof RetryError ? error.attempts : 1,
         usage: NO_USAGE,
         latency_ms: Date.now() - started,
       }

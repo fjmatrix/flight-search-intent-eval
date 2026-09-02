@@ -23,7 +23,7 @@ export interface AiSearchInput {
   max_stops: number | null
   max_price: number | null
   flight_duration: number | null
-  connecting_airports: string[] | null
+  connecting_airports: AiSearchLocation[] | null
   bags: { checked: number; carry_on: number } | null
   trips: AiSearchTrip[]
 }
@@ -43,15 +43,18 @@ export interface LocationExpect {
   /** The intended location has no IATA code — "Texas", "west Europe". Absent means false. */
   fuzzy?: boolean
   /**
-   * One region per location the side is expected to hold, in any order. Read
-   * only when `fuzzy` is true.
+   * The names this side accepts, in any order. Read only when `fuzzy` is true.
+   * They are alternatives — the region, an abbreviation, another language's
+   * rendering, the query's own wording — and a returned location counts when it
+   * matches any one of them. Listing several does not ask for several locations.
    */
   names?: string[]
 }
 
 /**
  * Mirrors `trips[]` positionally. Omitted nullable fields must be null in the
- * model response; departure and arrival are required for every expected trip.
+ * model response, except `departure_date` on a multi, which every leg carries;
+ * departure and arrival are required for every expected trip.
  */
 export interface TripExpect {
   departure: LocationExpect
@@ -64,9 +67,8 @@ export interface TripExpect {
 }
 
 /**
- * A case's expectations. For an expected search, omitted nullable params mean
- * "must be null". Dimension graders still return null when their field is not
- * asserted; gradeNoInventedParams enforces the omission.
+ * A case's expectations. Every field is optional: an omitted one is not asserted,
+ * and its grader returns null rather than pass or fail.
  */
 export interface Expect {
   action?: Action
@@ -77,7 +79,8 @@ export interface Expect {
   max_stops?: AiSearchInput['max_stops']
   max_price?: AiSearchInput['max_price']
   flight_duration?: AiSearchInput['flight_duration']
-  connecting_airports?: AiSearchInput['connecting_airports']
+  /** Graded like a trip's locations: accepted codes, or fuzzy names. */
+  connecting_airports?: LocationExpect
   bags?: AiSearchInput['bags']
 }
 

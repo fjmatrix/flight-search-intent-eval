@@ -1,4 +1,4 @@
-import { toDay, toRange } from './dates.ts'
+import { toDate, toDay, toRange } from './dates.ts'
 import { normalize, scoreNames, type GradingConfig } from './semantic.ts'
 import type {
   AiSearchLocation,
@@ -43,24 +43,61 @@ function same(a: unknown, b: unknown): boolean {
 }
 
 /**
+ * A trip states its stay one of two ways: `duration` nights, or a `return_date`.
+ * The two say the same thing, so whichever one a trip leaves out is filled in
+ * from the other before the trip is compared. Deriving needs a departure pinned
+ * to a single day — a departure window plus a return day names no one stay
+ * length — so a trip without one is compared as it stands.
+ */
+function withDerivedStay(trip: AiSearchTrip): AiSearchTrip {
+  if (!trip.departure_date) return trip
+  const [departure, departureEnd] = toRange(trip.departure_date)
+  if (Number.isNaN(departure) || departure !== departureEnd) return trip
+
+  if (trip.duration === null && trip.return_date !== null) {
+    const [first, last] = toRange(trip.return_date)
+    if (Number.isNaN(first) || Number.isNaN(last)) return trip
+    const [shortest, longest] = [first - departure, last - departure]
+    return { ...trip, duration: shortest === longest ? `${shortest}` : `${shortest}-${longest}` }
+  }
+
+  if (trip.return_date === null && trip.duration !== null) {
+    const [shortest, longest] = toNights(trip.duration)
+    if (!Number.isFinite(shortest) || !Number.isFinite(longest)) return trip
+    const [first, last] = [toDate(departure + shortest), toDate(departure + longest)]
+    return { ...trip, return_date: first === last ? first : `${first}-${last}` }
+  }
+
+  return trip
+}
+
+/**
  * Expected trips paired with the actual ones, or null when they cannot be
  * compared at all. That null means "counts as a failure", not "not applicable" —
  * callers turn it into false.
+ *
+ * Only the graders that reach a trip through here see a derived stay.
+ * gradeTripShape and gradeDateSanity read `actual.params.trips` straight, so
+ * "return_date and duration are mutually exclusive" is still checked against
+ * what the model actually returned.
  */
 function pairTrips(actual: ParsedResult, expect: Expect): [AiSearchTrip, TripExpect][] | null {
   if (actual.action !== 'get_tickets') return null
   const expected = expect.trips ?? []
   const trips = actual.params.trips
   if (expected.length !== trips.length) return null
-  return expected.map((trip, i) => [trips[i]!, trip])
+  return expected.map((trip, i) => [withDerivedStay(trips[i]!), trip])
 }
 
 /**
- * True when every location the model returned satisfies the case. A non-fuzzy
- * case is satisfied by an accepted IATA code; a fuzzy one when the returned
- * locations pair off one-to-one with the regions the case names, each pair
- * close enough to count. Order does not matter: a query naming several places
- * puts no order on the response.
+ * True when every location the model returned is one the case accepts. A
+ * non-fuzzy case accepts a set of IATA codes; a fuzzy one accepts a set of
+ * names, and a returned name counts when it matches one of them outright or
+ * scores at least the configured similarity against one.
+ *
+ * `names` is a pool of alternatives, not a checklist. Nothing here asks for one
+ * location per name, so "east or south east asia" is answered by two locations
+ * or by one that writes both, in any order.
  */
 async function locationsMatch(
   actual: AiSearchLocation[],
@@ -73,49 +110,33 @@ async function locationsMatch(
     return actual.every((location) => expected.any_code!.includes(location.code))
   }
 
-  // One name per location, so a query naming five countries is only satisfied
-  // by five locations — not by one that stands for all of them.
-  const unmatched = [...expected.names!]
-  if (actual.length !== unmatched.length) return false
+  // The test case says these places have no IATA code, so any code here is wrong.
+  // Failing now also skips an embedding call that could not change the answer.
+  if (actual.some((location) => location.code.trim().toLowerCase() !== 'n/a')) return false
 
-  // Identical names pair off here, so a set the model got exactly right reaches
-  // the return below without embedding anything.
-  const unpaired: string[] = []
-  for (const location of actual) {
-    // The test case says this place has no IATA code, so any code here is wrong.
-    // Failing now also skips an embedding call that could not change the answer.
-    if (location.code.trim().toLowerCase() !== 'n/a') return false
-
-    const index = unmatched.findIndex((name) => normalize(name) === normalize(location.name))
-    if (index === -1) unpaired.push(location.name)
-    else unmatched.splice(index, 1)
-  }
-  if (unpaired.length === 0) return true
+  const accepted = expected.names!
+  // Names the case spells the same way settle here, so a set the model got
+  // exactly right reaches the return below without embedding anything.
+  const unmatched = actual
+    .map((location) => location.name)
+    .filter((name) => !accepted.some((option) => normalize(option) === normalize(name)))
+  if (unmatched.length === 0) return true
 
   // One request scores every leftover pair; choosing among them is arithmetic.
-  const scores = await scoreNames(unmatched, unpaired, ctx.grading)
+  const scores = await scoreNames(accepted, unmatched, ctx.grading)
 
   // Every pair that was scored, printed whether or not it clears the threshold.
-  for (const [row, expectedName] of unmatched.entries()) {
-    for (const [column, actualName] of unpaired.entries()) {
+  accepted.forEach((option, row) => {
+    unmatched.forEach((name, column) => {
       console.log(
-        `expected:${expectedName} ; model output: ${actualName}; cosineSimilarity:${scores[row]![column]!}`,
+        `expected:${option}; model output: ${name}; cosineSimilarity:${scores[row]![column]}`,
       )
-    }
-  }
-
-  const claimed = unmatched.map(() => false)
-
-  return unpaired.every((_, column) => {
-    // First name that clears the threshold claims this location. The names in a
-    // case are far enough apart that no later location wants the same one.
-    const index = unmatched.findIndex(
-      (_, row) => !claimed[row] && scores[row]![column]! >= ctx.grading.similarity_threshold,
-    )
-    if (index === -1) return false
-    claimed[index] = true
-    return true
+    })
   })
+
+  return unmatched.every((_, column) =>
+    accepted.some((_, row) => scores[row]![column]! >= ctx.grading.similarity_threshold),
+  )
 }
 
 /**
@@ -234,52 +255,33 @@ export function gradeCabin(actual: ParsedResult, expect: Expect): Grade {
   return actual.params.cabins === expect.cabins
 }
 
-const FILTERS = [
-  'max_stops',
-  'max_price',
-  'flight_duration',
-  'connecting_airports',
-  'bags',
-] as const
+/** Filters whose value is a number or a small flat object, compared structurally. */
+const PLAIN_FILTERS = ['max_stops', 'max_price', 'flight_duration', 'bags'] as const
 
-const OPTIONAL_PARAMS = ['passengers', 'cabins', ...FILTERS] as const
-const OPTIONAL_TRIP_FIELDS = ['departure_date', 'return_date', 'duration'] as const
-
-export function gradeFilters(actual: ParsedResult, expect: Expect): Grade {
-  const asserted = FILTERS.filter((field) => expect[field] !== undefined)
-  if (asserted.length === 0) return null
-  if (actual.action !== 'get_tickets') return false
-  return asserted.every((field) => same(actual.params[field], expect[field]))
-}
+/** Every filter the FILT column covers. `connecting_airports` holds locations. */
+const FILTERS = [...PLAIN_FILTERS, 'connecting_airports'] as const
 
 /**
- * Search expectations are closed-world for nullable values: when the case does
- * not name one, the model must return null. Required locations and matcher
- * objects are graded separately because `expect` does not mirror their literal
- * response shape.
+ * Async because `connecting_airports` is a list of locations and gets the same
+ * treatment a leg's departure does: accepted IATA codes, or fuzzy names scored
+ * by embedding. A case naming a connection it does not get back fails here.
  */
-export function gradeNoInventedParams(actual: ParsedResult, expect: Expect): Grade {
-  if (actual.action !== 'get_tickets') return null
+export async function gradeFilters(
+  actual: ParsedResult,
+  expect: Expect,
+  ctx: GradeContext,
+): Promise<Grade> {
+  if (FILTERS.every((field) => expect[field] === undefined)) return null
+  if (actual.action !== 'get_tickets') return false
 
-  const expectedTrips = expect.trips
-  if (expect.search_type === undefined || expectedTrips === undefined) return false
-  if (actual.params.trips.length !== expectedTrips.length) return false
+  const structural = PLAIN_FILTERS.every(
+    (field) => expect[field] === undefined || same(actual.params[field], expect[field]),
+  )
+  if (!structural) return false
 
-  if (
-    !OPTIONAL_PARAMS.every(
-      (field) => expect[field] !== undefined || actual.params[field] === null,
-    )
-  ) {
-    return false
-  }
-
-  return actual.params.trips.every((trip, index) => {
-    const expected = expectedTrips[index]!
-    if (expected.departure === undefined || expected.arrival === undefined) return false
-    return OPTIONAL_TRIP_FIELDS.every(
-      (field) => expected[field] !== undefined || trip[field] === null,
-    )
-  })
+  const connections = expect.connecting_airports
+  if (connections === undefined) return true
+  return locationsMatch(actual.params.connecting_airports ?? [], connections, ctx)
 }
 
 /**
@@ -335,7 +337,6 @@ export const GRADERS: Record<string, Grader> = {
   gradePassengers,
   gradeCabin,
   gradeFilters,
-  gradeNoInventedParams,
   gradeDateSanity,
   gradeTripShape,
 }

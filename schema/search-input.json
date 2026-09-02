@@ -30,6 +30,7 @@
                             "type": "object",
                             "properties": {
                                 "search_type": {
+                                    "description": "'oneway' is one departure with no return, 'roundtrip' is out and back, 'multi' is two or more legs. oneway and roundtrip carry exactly one entry in trips.",
                                     "type": "string",
                                     "enum": ["oneway", "roundtrip", "multi"]
                                 },
@@ -66,6 +67,7 @@
                                     "enum": ["economy", "economyPremium", "business", "firstClass", null]
                                 },
                                 "max_stops": {
+                                    "description": "Maximum stops allowed, applied to the whole search. Set it only when the traveller limits the journey as a whole",
                                     "anyOf": [
                                         {
                                             "type": "integer",
@@ -103,13 +105,29 @@
                                     ]
                                 },
                                 "connecting_airports": {
-                                    "description": "Required connection-airport IATA codes.",
+                                    "description": "a via point, layover, or stopover",
                                     "anyOf": [
                                         {
                                             "type": "array",
                                             "items": {
-                                                "type": "string"
-                                            }
+                                                "type": "object",
+                                                "properties": {
+                                                    "name": {
+                                                        "type": "string",
+                                                        "minLength": 1,
+                                                        "maxLength": 100,
+                                                        "description": "Location name. Preserve custom or vague names with no specific IATA code; use \"n/a\" when unavailable."
+                                                    },
+                                                    "code": {
+                                                        "type": "string",
+                                                        "description": "Three-letter IATA code or use \"n/a\" when unavailable."
+                                                    }
+                                                },
+                                                "required": ["name", "code"],
+                                                "additionalProperties": false
+                                            },
+                                            "minItems": 1,
+                                            "maxItems": 10
                                         },
                                         {
                                             "type": "null"
@@ -218,7 +236,7 @@
                                                 ]
                                             },
                                             "duration": {
-                                                "description": "Stay duration in days, such as '7' or '3-5'.",
+                                                "description": "Length of stay at this trip's arrival location, in days. format: '7' or '3-5'.",
                                                 "anyOf": [
                                                     {
                                                         "type": "string"

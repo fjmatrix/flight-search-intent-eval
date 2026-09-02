@@ -7,10 +7,18 @@ import {
   type Provider,
   type TokenUsage,
 } from './types.ts'
+import { errorMessage, RetryError, withRetry } from './retry.ts'
 
-/** Lazy so the SDK's missing-key throw happens at call time, not at import. */
+/** One call plus three retries. Past that a 429 is a rate limit to run under, not to wait out. */
+const MAX_ATTEMPTS = 4
+
+/**
+ * Lazy so the SDK's missing-key throw happens at call time, not at import.
+ * maxRetries: 0 hands retrying to withRetry, so the count a run reports is the
+ * whole story of what the call cost.
+ */
 let client: Anthropic | undefined
-const getClient = () => (client ??= new Anthropic())
+const getClient = () => (client ??= new Anthropic({ maxRetries: 0 }))
 
 /**
  * `input` counts every input token the call billed for. Anthropic reports
@@ -87,24 +95,26 @@ export const anthropic: Provider = {
   async call(req: ModelRequest): Promise<ModelResponse> {
     const started = Date.now()
     try {
-      const response = await getClient().messages.create({
-        model: req.model,
-        max_tokens: req.maxTokens,
-        // One breakpoint here covers the schema as well as the system prompt:
-        // both render ahead of the messages, and only the case text after it
-        // changes between calls. A prefix under the model's minimum cacheable
-        // length is silently not cached — that minimum is 4096 tokens on
-        // Haiku 4.5, which this prompt does not reach.
-        system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
-        messages: [{ role: 'user', content: req.user }],
-        output_config: {
-          format: { type: 'json_schema', schema: adaptSchema(req.schema) },
-          ...(req.effort ? { effort: req.effort } : {}),
-        },
-        ...req.params,
-      } as Anthropic.MessageCreateParamsNonStreaming)
+      const { value: response, attempts } = await withRetry(MAX_ATTEMPTS, () =>
+        getClient().messages.create({
+          model: req.model,
+          max_tokens: req.maxTokens,
+          // One breakpoint here covers the schema as well as the system prompt:
+          // both render ahead of the messages, and only the case text after it
+          // changes between calls. A prefix under the model's minimum cacheable
+          // length is silently not cached — that minimum is 4096 tokens on
+          // Haiku 4.5, which this prompt does not reach.
+          system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
+          messages: [{ role: 'user', content: req.user }],
+          output_config: {
+            format: { type: 'json_schema', schema: adaptSchema(req.schema) },
+            ...(req.effort ? { effort: req.effort } : {}),
+          },
+          ...req.params,
+        } as Anthropic.MessageCreateParamsNonStreaming),
+      )
 
-      const base = { usage: readUsage(response.usage), latency_ms: Date.now() - started }
+      const base = { usage: readUsage(response.usage), attempts, latency_ms: Date.now() - started }
 
       if (response.stop_reason === 'refusal') {
         return {
@@ -128,7 +138,9 @@ export const anthropic: Provider = {
       return {
         output: null,
         status: 'error',
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
+        // A throw from outside withRetry — parsing the response — took one call.
+        attempts: error instanceof RetryError ? error.attempts : 1,
         usage: NO_USAGE,
         latency_ms: Date.now() - started,
       }

@@ -1,19 +1,19 @@
 /** Turns the run files into the numbers and rows the page shows. */
 
 import { FIELDS } from './fields.ts'
+import { GRADERS } from '../grade.ts'
 import type { Pricing, ResultCase, ResultsFile, RunRecord } from './read.ts'
 import type { ParsedResult } from '../types.ts'
 
 export interface Missed {
   grader: string
-  /** Repeats that passed, out of the repeats that scored this dimension. */
-  passed: number
-  of: number
   exp: string
   got: string
 }
 
 export interface FailRow {
+  /** The model view this row belongs to, not the model name: see ModelView.key. */
+  key: string
   model: string
   id: string
   lang: string
@@ -30,6 +30,11 @@ export interface Tally {
 }
 
 export interface ModelView {
+  /**
+   * One results file. A run holds the same model at several efforts, so the
+   * name alone does not identify a row — this is the file's basename.
+   */
+  key: string
   model: string
   prompt: string
   effort: string | null
@@ -61,7 +66,15 @@ export interface ViewData {
   fails: FailRow[]
 }
 
-const casePassed = (c: ResultCase) => c.runs.length > 0 && c.runs.every((r) => r.passed === true)
+/**
+ * Recomputed from the grades rather than read off `run.passed`, so a results
+ * file written when a since-removed grader was scoring is judged by the
+ * dimensions this build has. A run that produced no grades never passes.
+ */
+const casePassed = (c: ResultCase, graders: string[]) =>
+  c.runs.length > 0 &&
+  c.runs.every((r) => r.grades && graders.every((g) => r.grades![g] !== false))
+
 const resultOf = (r: RunRecord) => (r.actual as { result?: ParsedResult } | null)?.result
 
 /**
@@ -91,35 +104,59 @@ function median(ns: number[]): number {
   return sorted[Math.floor(sorted.length / 2)]!
 }
 
-/** Grader names in the order gradeAll wrote them, taken from the first graded run. */
+/**
+ * Grader names in the order gradeAll wrote them, taken from the first graded run,
+ * minus any this build no longer defines. An older results file can carry grades
+ * from a grader that has since been removed; the dashboard shows the dimensions
+ * that exist now.
+ */
 function graderOrder(files: ResultsFile[]): string[] {
   for (const file of files) {
     for (const c of file.cases) {
-      for (const run of c.runs) if (run.grades) return Object.keys(run.grades)
+      for (const run of c.runs) {
+        if (run.grades) return Object.keys(run.grades).filter((g) => g in GRADERS)
+      }
     }
   }
   return []
 }
 
-function tally(cases: ResultCase[], keep: (c: ResultCase) => boolean): Tally {
+/** The tags naming a search type, in the order the schema lists them. */
+const SEARCH_TYPE_TAGS = ['oneway', 'roundtrip', 'multi']
+
+/**
+ * Columns run from the most common tag to the least, except that the search-type
+ * tags rank as one block — placed where the most common of them falls, in schema
+ * order inside — so the three read side by side rather than split apart by how
+ * often each shape shows up.
+ */
+function orderTags(tags: string[], cases: ResultCase[]): string[] {
+  const count = (tag: string) => cases.filter((c) => c.tags.includes(tag)).length
+  const block = SEARCH_TYPE_TAGS.filter((tag) => tags.includes(tag))
+  const blockRank = Math.max(0, ...block.map(count))
+  const rank = (tag: string) => (block.includes(tag) ? blockRank : count(tag))
+  // -1 for every tag outside the block, so two of those keep the sort stable.
+  const within = (tag: string) => block.indexOf(tag)
+  return tags.sort((a, b) => rank(b) - rank(a) || within(a) - within(b))
+}
+
+function tally(cases: ResultCase[], graders: string[], keep: (c: ResultCase) => boolean): Tally {
   const subset = cases.filter(keep)
-  return { passed: subset.filter(casePassed).length, of: subset.length }
+  return { passed: subset.filter((c) => casePassed(c, graders)).length, of: subset.length }
 }
 
 export function build(files: ResultsFile[]): ViewData {
   const first = files[0]!
   const cases = first.cases
   const graders = graderOrder(files)
-  const tags = [...new Set(files.flatMap((f) => f.cases.flatMap((c) => c.tags)))].sort(
-    (a, b) =>
-      cases.filter((c) => c.tags.includes(b)).length - cases.filter((c) => c.tags.includes(a)).length,
-  )
+  const tags = orderTags([...new Set(files.flatMap((f) => f.cases.flatMap((c) => c.tags)))], cases)
   const langs = [...new Set(cases.map((c) => c.lang))].sort()
 
   const models: ModelView[] = []
   const fails: FailRow[] = []
 
   for (const file of files) {
+    const key = [file.model, file.effort].filter(Boolean).join('-')
     // Dimensions count per repeat, the same denominator run.ts prints.
     const dims: Record<string, Tally> = Object.fromEntries(graders.map((g) => [g, { passed: 0, of: 0 }]))
     const sum = { input: 0, output: 0, reasoning: 0, cached: 0, written: 0 }
@@ -151,45 +188,43 @@ export function build(files: ResultsFile[]): ViewData {
         }
       }
 
-      if (casePassed(c)) continue
+      if (casePassed(c, graders)) continue
 
-      const missed: Missed[] = []
+      // The count of passing repeats orders the list — a dimension that failed
+      // every repeat leads — but only the grader and its two sides are shown.
+      const missed: (Missed & { passed: number })[] = []
       for (const g of graders) {
         const scored = c.runs.filter((r) => r.grades?.[g] != null)
         const passed = scored.filter((r) => r.grades![g] === true).length
         if (scored.length === 0 || passed === scored.length) continue
         const failing = c.runs.find((r) => r.grades?.[g] === false)!
         const slice = FIELDS[g]?.(c.expect, resultOf(failing), file.today)
-        missed.push({
-          grader: g,
-          passed,
-          of: scored.length,
-          exp: slice?.exp ?? '—',
-          got: slice?.got ?? '—',
-        })
+        missed.push({ grader: g, passed, exp: slice?.exp ?? '—', got: slice?.got ?? '—' })
       }
       missed.sort((a, b) => a.passed - b.passed)
 
       fails.push({
+        key,
         model: file.model,
         id: c.id,
         lang: c.lang,
         text: c.text,
         tags: c.tags,
         errored: c.runs.some((r) => !r.grades),
-        missed,
+        missed: missed.map(({ grader, exp, got }) => ({ grader, exp, got })),
       })
     }
 
     models.push({
+      key,
       model: file.model,
       prompt: file.prompt,
       effort: file.effort ?? null,
-      passed: file.cases.filter(casePassed).length,
+      passed: file.cases.filter((c) => casePassed(c, graders)).length,
       errors,
       dims,
-      tags: Object.fromEntries(tags.map((t) => [t, tally(file.cases, (c) => c.tags.includes(t))])),
-      langs: Object.fromEntries(langs.map((l) => [l, tally(file.cases, (c) => c.lang === l)])),
+      tags: Object.fromEntries(tags.map((t) => [t, tally(file.cases, graders, (c) => c.tags.includes(t))])),
+      langs: Object.fromEntries(langs.map((l) => [l, tally(file.cases, graders, (c) => c.lang === l)])),
       usage: {
         input: Math.round(sum.input / calls),
         output: Math.round(sum.output / calls),

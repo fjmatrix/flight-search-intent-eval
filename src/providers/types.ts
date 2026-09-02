@@ -38,6 +38,8 @@ export interface ModelResponse {
   output: unknown
   status: RunStatus
   error?: string
+  /** Calls made, the first one included. Above 1 means retries, and latency covers them all. */
+  attempts: number
   usage: TokenUsage
   latency_ms: number
 }

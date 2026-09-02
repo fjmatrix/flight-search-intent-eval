@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/hero.svg" width="880" alt="A Spanish flight query parsed into a structured search spec, then scored on twelve grading dimensions">
+  <img src="docs/hero.svg" width="880" alt="A Spanish flight query parsed into a structured search spec, then scored on eleven grading dimensions">
 </p>
 
 <h1 align="center">flight-search-eval</h1>
@@ -13,7 +13,8 @@
   <img src="https://img.shields.io/badge/node-%E2%89%A522-5FA04E?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node 22+">
   <img src="https://img.shields.io/badge/OpenAI-412991?style=flat-square&logo=openai&logoColor=white" alt="OpenAI">
   <img src="https://img.shields.io/badge/Anthropic-D4A27F?style=flat-square&logo=anthropic&logoColor=white" alt="Anthropic">
-  <img src="https://img.shields.io/badge/graders-12-6E56CF?style=flat-square" alt="12 graders">
+  <img src="https://img.shields.io/badge/Gemini-4285F4?style=flat-square&logo=googlegemini&logoColor=white" alt="Google Gemini">
+  <img src="https://img.shields.io/badge/graders-11-6E56CF?style=flat-square" alt="11 graders">
   <img src="https://img.shields.io/badge/license-MIT-2F81F7?style=flat-square" alt="MIT license">
 </p>
 
@@ -24,35 +25,41 @@ filters — decides which itineraries a traveler is ever shown. Grading it is gr
 understood which flights they meant. Not a booking benchmark: τ-bench and friends cover what happens
 after. This covers what happens before.
 
-26 cases in English and Spanish, 12 independent graders, one adapter interface per vendor.
+26 cases in English and Spanish, 11 independent graders, one adapter interface per vendor.
 
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env   # OPENAI_API_KEY, ANTHROPIC_API_KEY
+cp .env.example .env   # OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY
 npm run eval
 ```
 
 Each run writes `results/<run-id>/<model>.json` and a self-contained `index.html` leaderboard —
 no server, just open it. Re-render any run with `npm run dashboard -- results/<run-id>`.
 
+Every call is appended to `results/<run-id>/<model>.partial.jsonl` as it lands, so a run that dies
+halfway has lost nothing. `--run <run-id>` re-enters that directory: models that finished are
+skipped, and the one that died calls only what it is still missing.
+
 ```bash
-npm run eval -- --model claude-opus-5 --lang es --repeats 3
+npm run eval -- --model claude-opus-5 --file es --repeats 3
 ```
 
 | flag | |
 | --- | --- |
 | `--model <id>` | run one entry from the config instead of every one |
-| `--lang en\|es` | one dataset file |
+| `--file a,b` | dataset files to run, comma-separated; default is every one |
 | `--limit N` | first N cases |
+| `--concurrency N` | calls in flight at once, within one model (default 4) |
+| `--run <run-id>` | resume into an existing results directory instead of opening a new one |
 | `--repeats N` | same case N times — variance is a result too |
 | `--today MM/DD/YYYY` | override the anchor date |
 | `--prompt v6` | pick `prompts/<name>.txt` |
 
 `OPENAI_API_KEY` is needed even for Anthropic-only runs: fuzzy locations are graded with embeddings.
 
-## The 12 dimensions
+## The 11 dimensions
 
 Every grader returns pass, fail, or **not applicable** — and not-applicable stays out of the
 denominator, so no model is rewarded or punished for a field its case says nothing about.
@@ -64,11 +71,10 @@ A case passes only when every dimension it asserts passes.
 | `ORIG` `DEST` | the right airports — or, for places with no IATA code, the right region |
 | `DATE` `DUR` | departure and return land inside the allowed window; the stay inside the allowed nights |
 | `PAX` `CABIN` `FILT` | passengers, cabin, and the stops / price / bags / connection filters |
-| `NOINV` | nothing invented — every param the case does not assert came back `null` |
 | `SANE` | no departure before today, no return before departure, multi-city legs in order |
 | `SHAPE` | trip count matches the search type; `return_date` and `duration` never both set |
 
-The last three take no expected value. They hold for any valid search, so every case is scored on them.
+The last two take no expected value. They hold for any valid search, so every case is scored on them.
 
 ## Grading that isn't brittle
 
@@ -78,10 +84,11 @@ The last three take no expected value. They hold for any valid search, so every 
   weeks or more.
 - **Several airports can be right.** `{"any_code": ["ORD", "CHI", "MDW"]}` — Chicago is Chicago.
 - **Regions are compared by meaning.** *"west europe"*, *"beach towns in Southeast Asia"* have no IATA
-  code, so returned names are paired against expected ones by embedding cosine (≥ 0.80), one-to-one and
-  order-free. Names that already match exactly never touch the network.
-- **Closed world.** A case that never mentions bags expects `bags: null`. Helpfully inventing
-  `checked: 1` is a failure, not a bonus.
+  code, so `names` lists the spellings the case accepts — including the query's own wording — and every
+  returned name has to match one of them outright or by embedding cosine (≥ `similarity_threshold`, 0.72
+  today). The list is alternatives, like `any_code`: it does not ask for one location per name, so *"east
+  or south east asia"* is answered by two names or by one that writes both. Names that already match
+  exactly never touch the network.
 
 ## A case
 
@@ -96,7 +103,7 @@ The last three take no expected value. They hold for any valid search, so every 
 ```
 
 One object per line in `dataset/<lang>.jsonl`; tags are the report buckets defined in
-`dataset/tags.json`. Expected dates are written against the anchor date in `eval.config.json`
+`src/dashboard/tags.json`. Expected dates are written against the anchor date in `eval.config.json`
 (`"today": "01/01/2026"`), which is also the date the prompt is told is today — change one and you
 change the other.
 
@@ -118,10 +125,10 @@ vendor is being called.
 ## Layout
 
 ```
-dataset/   *.jsonl cases + tags.json
+dataset/   *.jsonl cases
 prompts/   the system prompt under test
 schema/    the JSON schema the model must fill
-src/       run.ts · grade.ts · semantic.ts · providers/ · dashboard/
+src/       run.ts · grade.ts · semantic.ts · providers/ · dashboard/ (+ tags.json)
 results/   one directory per run (gitignored)
 ```
 

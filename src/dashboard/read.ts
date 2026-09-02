@@ -10,6 +10,8 @@ export interface RunRecord {
   repeat: number
   status: RunStatus
   error?: string
+  /** Calls the response cost. Absent unless the adapter had to retry. */
+  attempts?: number
   /** Absent when the call never produced a parseable response. */
   grades?: Record<string, Grade>
   passed?: boolean
