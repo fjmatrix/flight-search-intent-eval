@@ -12,6 +12,16 @@ interface TagCopy {
   onPage?: boolean
 }
 
+const REPO = 'https://github.com/fjmatrix/flight-search-intent-eval'
+/** GitHub's mark, from octicons `mark-github`. */
+const GITHUB_MARK =
+  '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 ' +
+  '7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53' +
+  '.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08' +
+  '-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 ' +
+  '2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 ' +
+  '8.013 0 0016 8c0-4.42-3.58-8-8-8Z"/></svg>'
+
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
 
@@ -120,11 +130,17 @@ function leaderboardRow(m: ModelView, i: number, v: ViewData, maxScored: number)
   </div></td></tr>`
 }
 
+/** The tag's own copy, for the column header's tooltip. */
+function tagTip(t: string): string {
+  const copy = (TAGS as Record<string, TagCopy>)[t]
+  return copy ? `${t}\n${copy.definition}` : t
+}
+
 /**
- * The tags whose column headers do not speak for themselves, defined before the
- * reader meets them. A tag the run never used is left out.
+ * The two tags whose column headers do not speak for themselves. Every other tag
+ * is left to its header tooltip; a tag the run never used is left out.
  */
-function tagIntro(v: ViewData): string {
+function tagLegend(v: ViewData): string {
   const rows = v.tags
     .map((t) => [t, (TAGS as Record<string, TagCopy>)[t]] as const)
     .filter(([, copy]) => copy?.onPage)
@@ -136,8 +152,8 @@ function tagIntro(v: ViewData): string {
     })
     .join('')
   if (!rows) return ''
-  return `<div class="tags">
-    <p>Tags bucket the cases; each is scored on its own.</p>
+  return `<div class="lg tagdefs">
+    <h3>Tag columns <em>hover a header for its definition</em></h3>
     <dl>${rows}</dl></div>`
 }
 
@@ -156,11 +172,13 @@ export function page(v: ViewData): string {
 <div id="tip"></div>
 <div class="wrap">
 <header class="mast">
-  <h1>Flight Search Eval</h1>
-  <div class="sub">A benchmark for flight-search intent parsing. Real-world queries in three
+  <div class="mast-top">
+    <h1>Flight Search Eval</h1>
+    <a class="repo" href="${REPO}" target="_blank" rel="noreferrer">${GITHUB_MARK}<span>${esc(REPO.replace(/^https:\/\/github\.com\//, ''))}</span></a>
+  </div>
+  <p class="sub">A benchmark for flight-search intent parsing. Real-world queries in three
     languages — deduped, de-identified, hand-labeled — put to every model on the same terms;
-    ${spell(v.graders.length)} independent graders decide whether each one caught the traveler's intent.</div>
-  ${tagIntro(v)}
+    ${spell(v.graders.length)} independent graders decide whether each one caught the traveler's intent.</p>
 </header>
 
 <dl class="meta">
@@ -179,11 +197,12 @@ export function page(v: ViewData): string {
   <h2>Leaderboard</h2>
   <div class="scroll"><table class="lb">
     <thead><tr><th></th><th>Model</th><th>Cases passed</th><th style="min-width:196px">Dimensions</th>
-      ${v.tags.map((t, i) => `<th class="tg${i === 0 ? ' first' : ''}">${esc(t)}</th>`).join('')}
+      ${v.tags.map((t, i) => `<th class="tg${i === 0 ? ' first' : ''}" data-tip="${esc(tagTip(t))}">${esc(t)}</th>`).join('')}
       <th class="num" style="border-left:2px solid var(--rule2)">Errors</th><th></th></tr></thead>
     <tbody>${v.models.map((m, i) => leaderboardRow(m, i, v, maxScored)).join('')}</tbody>
   </table></div>
-  <div class="legend"><div class="lg">
+  <div class="legend">
+    <div class="lg">
     <h3>Dimension strip &amp; tag columns — pass rate</h3>
     <ul>
       <li><i class="swatch" style="--c:var(--good);height:18px"></i><span>95%+</span></li>
@@ -191,7 +210,9 @@ export function page(v: ViewData): string {
       <li><i class="swatch" style="--c:var(--serious);height:9px"></i><span>50–80%</span></li>
       <li><i class="swatch" style="--c:var(--critical);height:4px"></i><span>under 50%</span></li>
       <li><i class="swatch na" style="width:14px"></i><span>never scored</span></li>
-    </ul></div></div>
+    </ul></div>
+    ${tagLegend(v)}
+  </div>
 </section>
 
 <section>
@@ -210,11 +231,6 @@ export function page(v: ViewData): string {
     <tbody id="fl-body"></tbody>
   </table></div>
 </section>
-
-<footer>
-  <p>Not-applicable is excluded from every denominator and never counted as a pass. A call that produced no grades lands in the error column rather than scoring zero on every dimension.</p>
-  <p>Expected and returned are formatted from <code>expect</code> and <code>actual</code> in the results file. The dashboard never re-decides pass or fail; it shows the two values the grader compared.</p>
-</footer>
 </div>
 
 <script type="application/json" id="data">${embed({
@@ -252,15 +268,13 @@ h1,h2,h3{font-family:var(--f-disp);text-wrap:balance;margin:0}
 :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
 header.mast{padding:34px 0 18px;border-bottom:2px solid var(--ink)}
 h1{font-size:31px;font-weight:800;letter-spacing:-.022em;line-height:1.05}
-.sub{color:var(--ink2);font-size:15px;line-height:1.55;margin-top:9px}
-.tags{margin-top:18px}
-.tags p{margin:0 0 9px;color:var(--ink3);font-size:14px}
-.tags dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:7px 16px}
-.tags dt{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;
-color:var(--ink2);white-space:nowrap;padding-top:3px}
-.tags dd{margin:0;color:var(--ink2);font-size:14px;line-height:1.55}
-.tags dd i{font-style:normal;font-family:var(--f-mono);font-size:13px;color:var(--ink)}
-.tags dd em{font-style:normal;color:var(--ink3)}
+.mast-top{display:flex;justify-content:space-between;align-items:baseline;gap:20px;flex-wrap:wrap}
+.repo{display:inline-flex;align-items:center;gap:7px;font-family:var(--f-mono);font-size:12px;
+color:var(--ink2);text-decoration:none;border:1px solid var(--rule2);padding:5px 9px}
+.repo:hover{color:var(--accent);border-color:var(--accent)}
+.repo svg{width:15px;height:15px;fill:currentColor;flex:none;align-self:center}
+/* Capped measure: the sentence runs to about 90 characters a line rather than the full 1280px. */
+.sub{margin:14px 0 0;color:var(--ink);font-size:16px;line-height:1.65;max-width:78ch}
 .meta{display:flex;flex-wrap:wrap;margin:0;border-bottom:1px solid var(--rule)}
 .meta div{padding:11px 20px 11px 0;margin-right:20px;border-right:1px solid var(--rule);display:flex;flex-direction:column;gap:2px}
 .meta div:last-child{border-right:0}
@@ -364,16 +378,21 @@ text-decoration:underline;padding:12px 2px 0}
 .legend{display:flex;gap:32px;flex-wrap:wrap;padding:18px 0 0;border-top:1px solid var(--rule);margin-top:14px}
 .lg{display:flex;flex-direction:column;gap:7px}
 .lg h3{font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink3);font-weight:600;font-family:var(--f-body)}
+.lg h3 em{font-style:normal;text-transform:none;letter-spacing:0;font-weight:400;margin-left:9px}
+.tagdefs{flex:1 1 44ch;min-width:0;gap:9px}
+.tagdefs dl{margin:0;display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px}
+.tagdefs dt{font-family:var(--f-mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;
+color:var(--ink);font-weight:600;white-space:nowrap;padding-top:1px}
+.tagdefs dd{margin:0;color:var(--ink2);font-size:12.5px;line-height:1.55}
+.tagdefs dd i{font-style:normal;font-family:var(--f-mono);font-size:11.5px;color:var(--ink)}
+.tagdefs dd em{font-style:normal;color:var(--ink3)}
 .lg ul{list-style:none;margin:0;padding:0;display:flex;gap:14px;flex-wrap:wrap}
 .lg li{display:flex;align-items:flex-end;gap:6px;font-size:11.5px;color:var(--ink2)}
 .lg .swatch{width:6px;background:var(--c);border-radius:1px 1px 0 0}
 .lg .swatch.na{background:var(--na);height:2px}
 .lg li span{line-height:1.1}
-footer{margin-top:46px;padding-top:16px;border-top:1px solid var(--rule);color:var(--ink3);font-size:11.5px;max-width:74ch}
-footer p{margin:0 0 8px}
-footer code{font-family:var(--f-mono)}
 #tip{position:fixed;z-index:50;pointer-events:none;opacity:0;transition:opacity .08s;background:var(--ink);
-color:var(--paper);font-family:var(--f-mono);font-size:11px;padding:6px 9px;line-height:1.5;white-space:pre;max-width:340px}
+color:var(--paper);font-family:var(--f-mono);font-size:11px;padding:6px 9px;line-height:1.5;white-space:pre-wrap;max-width:340px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 `
 

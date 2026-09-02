@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import { badge } from './dashboard/badge.ts'
 import { readRun } from './dashboard/read.ts'
 import { page } from './dashboard/render.ts'
 import { build } from './dashboard/view.ts'
@@ -155,11 +156,24 @@ console.log(
 // and a rate limit shared between two models is one neither of them can plan for.
 for (const entry of entries) await runModel(entry)
 
+/** Committed, unlike results/: the README badge reads it from the default branch. */
+const BADGE = 'docs/badge.json'
+
 // Every model has written its JSON by now, so the page covers the whole run.
 const dashboard = `results/${runId}/index.html`
 try {
-  fs.writeFileSync(dashboard, page(build(readRun(`results/${runId}`))))
+  const view = build(readRun(`results/${runId}`))
+  fs.writeFileSync(dashboard, page(view))
   console.log(`\n  → ${dashboard}`)
+
+  // docs/badge.json is committed and read from the default branch by the README's
+  // score badge, so only a run over the whole board writes it: a --limit, --file
+  // or --model run scores a subset, and the badge has no way to say so.
+  // Presence, not value: `--limit ''` narrows the run just as `--limit 5` does.
+  if (!('limit' in args) && !('file' in args) && !('model' in args)) {
+    fs.writeFileSync(BADGE, JSON.stringify(badge(view), null, 2) + '\n')
+    console.log(`  → ${BADGE}`)
+  }
 } catch (error) {
   // The results are already on disk, so a render bug is not a failed eval.
   // Leaving no page at all beats leaving one an earlier render wrote.
