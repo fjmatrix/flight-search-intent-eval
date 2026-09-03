@@ -23,9 +23,14 @@
 
 ---
 
+<p align="center">
+  <strong><a href="https://fjmatrix.github.io/flight-search-intent-eval/">View leaderboard</a></strong>
+  ·
+  <a href="https://flightcat.io/">Flightcat.io</a>
+</p>
 Before a traveler is shown a itinerary, model has to understand the search intent — origin, destination, dates, duration, passengers, cabin, filters.
 
-- `From anywhere in Southeast Asia to Europe in april 2026 for 10 to 15 days.`
+- `From Atlanta to Southeast Asia in april 2026 for 10 to 15 days.`
 
 - `From France to Istanbul between July 3rd and July 6th. Two adults.`
 

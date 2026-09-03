@@ -1,8 +1,4 @@
-/**
- * Shared across adapters so `attempts` means the same thing for every vendor.
- * Vendor SDKs retry internally by default; adapters disable that and use this,
- * because a retry the eval cannot see is a latency number it cannot explain.
- */
+/** Shared retry loop keeps provider attempt counts consistent. */
 
 export interface Attempt<T> {
   value: T
@@ -14,11 +10,11 @@ const RETRYABLE_STATUS = new Set([408, 409, 429, 500, 502, 503, 504])
 export function isRetryable(error: unknown): boolean {
   const status = (error as { status?: unknown })?.status
   if (typeof status === 'number') return RETRYABLE_STATUS.has(status)
-  // Connection resets and timeouts carry no status.
+  // Network failures may lack a status.
   return error instanceof Error && !('status' in error)
 }
 
-/** Carries the attempt count out of a failed call; exhausted retries cost real time. */
+/** Preserves the attempt count after failure. */
 export class RetryError extends Error {
   constructor(
     readonly attempts: number,
@@ -51,7 +47,7 @@ export async function withRetry<T>(
 export function errorMessage(error: unknown): string {
   if (!(error instanceof Error)) return String(error)
   const status = (error as { status?: unknown }).status
-  // SDK messages usually lead with the status already; don't say it twice.
+  // Avoid duplicate status prefixes.
   if (typeof status !== 'number' || error.message.startsWith(String(status))) {
     return error.message
   }

@@ -1,32 +1,29 @@
-/**
- * The vendor boundary. Request format, schema configuration, and response parsing
- * live in the adapters; nothing outside them knows which vendor is being called.
- */
+/** Provider-neutral request and response types. */
 
 export type JsonSchema = Record<string, unknown>
 
 export interface ModelRequest {
-  /** Prompt text, `{{todaysDate}}` already substituted. */
+  /** System prompt with today's date substituted. */
   system: string
-  /** The case's query text. */
+  /** Case query. */
   user: string
   schema: JsonSchema
   model: string
   maxTokens: number
-  /** Reasoning depth. Each adapter puts it where its own vendor wants it. */
+  /** Reasoning depth. */
   effort: string | null
-  /** Vendor-specific knobs, passed through from eval.config.json. */
+  /** Vendor options from eval.config.json. */
   params: Record<string, unknown>
 }
 
 export interface TokenUsage {
   input: number
   output: number
-  /** null when the vendor does not report reasoning tokens separately. */
+  /** null when reasoning is not reported separately. */
   reasoning: number | null
-  /** The part of `input` served from cache, billed at the cache_read rate. */
+  /** Cached portion of input. */
   cached: number
-  /** The part of `input` written to cache, billed at the cache_write rate. */
+  /** Cache-written portion of input. */
   written: number
   total: number
 }
@@ -34,11 +31,11 @@ export interface TokenUsage {
 export type RunStatus = 'ok' | 'refusal' | 'incomplete' | 'error'
 
 export interface ModelResponse {
-  /** The parsed JSON the model produced, or null when status is not 'ok'. */
+  /** Parsed JSON, or null on failure. */
   output: unknown
   status: RunStatus
   error?: string
-  /** Calls made, the first one included. Above 1 means retries, and latency covers them all. */
+  /** Total calls, including retries. */
   attempts: number
   usage: TokenUsage
   latency_ms: number

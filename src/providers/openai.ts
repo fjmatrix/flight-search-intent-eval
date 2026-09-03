@@ -8,14 +8,10 @@ import {
 } from './types.ts'
 import { errorMessage, RetryError, withRetry } from './retry.ts'
 
-/** One call plus three retries. Past that a 429 is a rate limit to run under, not to wait out. */
+/** One call plus three retries. */
 const MAX_ATTEMPTS = 4
 
-/**
- * Lazy so the SDK's missing-key throw happens at call time, not at import.
- * maxRetries: 0 hands retrying to withRetry, so the count a run reports is the
- * whole story of what the call cost.
- */
+/** Lazy client with retries delegated to withRetry. */
 let client: OpenAI | undefined
 const getClient = () => (client ??= new OpenAI({ maxRetries: 0 }))
 
@@ -70,14 +66,14 @@ export const openai: Provider = {
         return { ...base, output: null, status: 'refusal', error: refusal.refusal }
       }
 
-      // strict: true guarantees the text parses and matches the schema.
+      // strict guarantees valid structured output.
       return { ...base, output: JSON.parse(response.output_text), status: 'ok' }
     } catch (error) {
       return {
         output: null,
         status: 'error',
         error: errorMessage(error),
-        // A throw from outside withRetry — parsing the response — took one call.
+        // Parsing fails after one call.
         attempts: error instanceof RetryError ? error.attempts : 1,
         usage: NO_USAGE,
         latency_ms: Date.now() - started,

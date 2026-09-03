@@ -9,23 +9,14 @@ import {
 } from './types.ts'
 import { errorMessage, RetryError, withRetry } from './retry.ts'
 
-/** One call plus three retries. Past that a 429 is a rate limit to run under, not to wait out. */
+/** One call plus three retries. */
 const MAX_ATTEMPTS = 4
 
-/**
- * Lazy so the SDK's missing-key throw happens at call time, not at import.
- * maxRetries: 0 hands retrying to withRetry, so the count a run reports is the
- * whole story of what the call cost.
- */
+/** Lazy client with retries delegated to withRetry. */
 let client: Anthropic | undefined
 const getClient = () => (client ??= new Anthropic({ maxRetries: 0 }))
 
-/**
- * `input` counts every input token the call billed for. Anthropic reports
- * uncached, cache-read and cache-write separately, so they are summed back
- * together for `input` and also kept apart, because each bills at its own rate.
- * Thinking tokens bill as output and are not reported apart from it.
- */
+/** Normalizes usage: cache reads/writes are in input; reasoning stays in output. */
 function readUsage(usage: Anthropic.Usage | undefined): TokenUsage {
   if (!usage) return NO_USAGE
   const cached = usage.cache_read_input_tokens ?? 0
@@ -41,15 +32,9 @@ function readUsage(usage: Anthropic.Usage | undefined): TokenUsage {
   }
 }
 
-/**
- * Rewrites the shared schema into the subset Anthropic's json_schema format takes:
- * it rejects numeric bounds and array size caps, so those are dropped. Nothing
- * re-checks them afterwards, so an Anthropic run can return an out-of-range number
- * where the same schema on OpenAI could not. String bounds and minItems at 0 or 1
- * are accepted and enforced, so they pass through.
- */
+/** Drops unsupported numeric and array constraints; keeps minItems up to 1. */
 function adaptSchema(schema: JsonSchema): JsonSchema {
-  // Everything named here is dropped; `accepted` is what Anthropic takes verbatim.
+  // Strip unsupported constraints.
   const {
     minimum,
     maximum,
@@ -69,10 +54,10 @@ function adaptSchema(schema: JsonSchema): JsonSchema {
 
   const out: JsonSchema = { ...accepted }
 
-  // minItems is taken at 0 and 1, rejected above.
+  // Anthropic rejects minItems above 1.
   if (typeof minItems === 'number' && minItems <= 1) out.minItems = minItems
 
-  // The places a subschema can appear, each rebuilt through this function.
+  // Recursively adapt nested schemas.
   if (properties) {
     out.properties = Object.fromEntries(
       Object.entries(properties as Record<string, JsonSchema>).map(([name, sub]) => [
@@ -99,11 +84,7 @@ export const anthropic: Provider = {
         getClient().messages.create({
           model: req.model,
           max_tokens: req.maxTokens,
-          // One breakpoint here covers the schema as well as the system prompt:
-          // both render ahead of the messages, and only the case text after it
-          // changes between calls. A prefix under the model's minimum cacheable
-          // length is silently not cached — that minimum is 4096 tokens on
-          // Haiku 4.5, which this prompt does not reach.
+          // Cache the stable schema and system prefix; short prefixes remain uncached.
           system: [{ type: 'text', text: req.system, cache_control: { type: 'ephemeral' } }],
           messages: [{ role: 'user', content: req.user }],
           output_config: {
@@ -128,7 +109,7 @@ export const anthropic: Provider = {
         return { ...base, output: null, status: 'incomplete', error: 'max_tokens' }
       }
 
-      // The json_schema format guarantees the text blocks parse to the schema.
+      // json_schema guarantees valid structured output.
       const text = response.content
         .filter((block) => block.type === 'text')
         .map((block) => block.text)
@@ -139,7 +120,7 @@ export const anthropic: Provider = {
         output: null,
         status: 'error',
         error: errorMessage(error),
-        // A throw from outside withRetry — parsing the response — took one call.
+        // Parsing fails after one call.
         attempts: error instanceof RetryError ? error.attempts : 1,
         usage: NO_USAGE,
         latency_ms: Date.now() - started,
