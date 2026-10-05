@@ -1,0 +1,8 @@
+# Dashboard HTML, rendered by src/dashboard/index.ts. `linguist-generated` drops
+# these from GitHub's language stats and collapses them in diffs.
+docs/index.html        linguist-generated=true
+results/**/index.html  linguist-generated=true
+
+# Per-run model outputs, written by src/run.ts. JSON is already excluded from the
+# language stats as a data format; this only collapses them in diffs.
+results/**/*.json      linguist-generated=true

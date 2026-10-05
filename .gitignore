@@ -3,3 +3,4 @@ node_modules/
 dataset/raw/
 SOURCES.md
 *.csv
+.DS_Store
